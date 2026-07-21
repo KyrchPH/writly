@@ -1,0 +1,184 @@
+.chart {
+  display: flex;
+  justify-content: center;
+  aspect-ratio: 16 / 9;
+  font-size: 12px;
+}
+
+.chart :global(.recharts-cartesian-axis-tick text) {
+  fill: var(--muted-foreground);
+}
+
+.chart :global(.recharts-cartesian-grid line[stroke="#ccc"]) {
+  stroke: var(--border);
+  opacity: 0.5;
+}
+
+.chart :global(.recharts-curve.recharts-tooltip-cursor) {
+  stroke: var(--border);
+}
+
+.chart :global(.recharts-polar-grid [stroke="#ccc"]) {
+  stroke: var(--border);
+}
+
+.chart :global(.recharts-reference-line [stroke="#ccc"]) {
+  stroke: var(--border);
+}
+
+.chart :global(.recharts-radial-bar-background-sector) {
+  fill: var(--muted);
+}
+
+.chart :global(.recharts-rectangle.recharts-tooltip-cursor) {
+  fill: var(--muted);
+}
+
+.chart :global(.recharts-dot[stroke="#fff"]) {
+  stroke: transparent;
+}
+
+.chart :global(.recharts-layer),
+.chart :global(.recharts-sector),
+.chart :global(.recharts-surface) {
+  outline: none;
+}
+
+.chart :global(.recharts-sector[stroke="#fff"]) {
+  stroke: transparent;
+}
+
+.chart__tooltip {
+  display: grid;
+  min-width: 8rem;
+  align-items: flex-start;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--background);
+  padding: 6px 10px;
+  font-size: 12px;
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.chart__tooltipLabel {
+  font-weight: 500;
+}
+
+.chart__tooltipItems {
+  display: grid;
+  gap: 6px;
+}
+
+.chart__tooltipRow {
+  display: flex;
+  width: 100%;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.chart__tooltipRow :global(svg) {
+  width: 10px;
+  height: 10px;
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+}
+
+.chart__tooltipRow--center {
+  align-items: center;
+}
+
+.chart__tooltipIndicator {
+  flex-shrink: 0;
+  border-radius: 2px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.chart__tooltipIndicator--dot {
+  width: 10px;
+  height: 10px;
+}
+
+.chart__tooltipIndicator--line {
+  width: 4px;
+  height: 10px;
+}
+
+.chart__tooltipIndicator--dashed {
+  width: 0;
+  height: 10px;
+  border: none;
+  border-left: 1.5px dashed var(--color-border);
+  background: transparent;
+}
+
+.chart__tooltipIndicator--nestDashed {
+  margin: 2px 0;
+}
+
+.chart__tooltipRowContent {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+  line-height: 1;
+}
+
+.chart__tooltipRowContent--end {
+  align-items: flex-end;
+}
+
+.chart__tooltipTextGroup {
+  display: grid;
+  gap: 6px;
+}
+
+.chart__tooltipName {
+  color: var(--muted-foreground);
+}
+
+.chart__tooltipValue {
+  color: var(--foreground);
+  font-family: "IBM Plex Mono", "SFMono-Regular", Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.chart__legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.chart__legend--top {
+  padding-bottom: 12px;
+}
+
+.chart__legend--bottom {
+  padding-top: 12px;
+}
+
+.chart__legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chart__legendItem :global(svg) {
+  width: 12px;
+  height: 12px;
+  color: var(--muted-foreground);
+}
+
+.chart__legendSwatch {
+  height: 8px;
+  width: 8px;
+  flex-shrink: 0;
+  border-radius: 2px;
+}

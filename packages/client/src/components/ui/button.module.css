@@ -1,0 +1,109 @@
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 200ms ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+.button:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.button:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px rgba(113, 113, 130, 0.3);
+}
+
+.button svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.button--default {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.button--default:hover {
+  background: rgba(3, 2, 19, 0.9);
+}
+
+.button--destructive {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.button--destructive:hover {
+  background: rgba(212, 24, 61, 0.9);
+}
+
+.button--outline {
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.button--outline:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.button--secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.button--secondary:hover {
+  background: rgba(236, 236, 240, 0.8);
+}
+
+.button--ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.button--ghost:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.button--link {
+  background: transparent;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.button--link:hover {
+  text-decoration: underline;
+}
+
+.button--size-default {
+  height: 36px;
+  padding: 8px 16px;
+}
+
+.button--size-sm {
+  height: 32px;
+  padding: 6px 12px;
+}
+
+.button--size-lg {
+  height: 40px;
+  padding: 8px 24px;
+}
+
+.button--size-icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+}

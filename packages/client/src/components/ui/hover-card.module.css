@@ -1,0 +1,39 @@
+.hover-card__content {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  z-index: 50;
+  width: 256px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  padding: 16px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  transform-origin: var(--radix-hover-card-content-transform-origin);
+}
+
+.hover-card__content[data-state="open"] {
+  animation: hover-card-fade-in 150ms ease, hover-card-zoom-in 150ms ease;
+}
+
+.hover-card__content[data-state="closed"] {
+  animation: hover-card-fade-out 150ms ease, hover-card-zoom-out 150ms ease;
+}
+
+@keyframes hover-card-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes hover-card-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes hover-card-zoom-in {
+  from { transform: scale(0.95); }
+  to { transform: scale(1); }
+}
+
+@keyframes hover-card-zoom-out {
+  from { transform: scale(1); }
+  to { transform: scale(0.95); }
+}

@@ -1,0 +1,121 @@
+.nav-menu {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-menu__list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.nav-menu__item {
+  position: relative;
+}
+
+.nav-menu__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  background: var(--background);
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.nav-menu__trigger:hover,
+.nav-menu__trigger:focus,
+.nav-menu__trigger[data-state="open"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.nav-menu__triggerIcon {
+  margin-left: 4px;
+  width: 12px;
+  height: 12px;
+  transition: transform 200ms ease;
+}
+
+.nav-menu__trigger[data-state="open"] .nav-menu__triggerIcon {
+  transform: rotate(180deg);
+}
+
+.nav-menu__content {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.nav-menu__viewportWrap {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+}
+
+.nav-menu__viewport {
+  position: relative;
+  margin-top: 6px;
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--popover);
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.nav-menu__link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 14px;
+  color: var(--foreground);
+  text-decoration: none;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.nav-menu__link:hover,
+.nav-menu__link:focus,
+.nav-menu__link[data-active="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.nav-menu__indicator {
+  position: absolute;
+  top: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 6px;
+}
+
+.nav-menu__indicatorDot {
+  width: 8px;
+  height: 8px;
+  background: var(--border);
+  transform: rotate(45deg);
+  border-radius: 2px 0 0 0;
+}

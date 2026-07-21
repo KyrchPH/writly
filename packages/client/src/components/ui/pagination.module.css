@@ -1,0 +1,54 @@
+.pagination {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  margin: 0 auto;
+}
+
+.pagination__content {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination__link {
+  gap: 4px;
+  padding: 0 10px;
+}
+
+.pagination__linkLabel {
+  display: none;
+  font-size: 14px;
+}
+
+@media (min-width: 640px) {
+  .pagination__linkLabel {
+    display: inline;
+  }
+}
+
+.pagination__ellipsis {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+}
+
+.pagination__ellipsisIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.pagination__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

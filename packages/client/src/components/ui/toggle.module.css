@@ -1,0 +1,62 @@
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.toggle:hover {
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.toggle[data-state="on"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.toggle:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(113, 113, 130, 0.3);
+}
+
+.toggle:disabled {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.toggle svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.toggle--outline {
+  border-color: var(--border);
+}
+
+.toggle--size-default {
+  height: 36px;
+  padding: 0 8px;
+  min-width: 36px;
+}
+
+.toggle--size-sm {
+  height: 32px;
+  padding: 0 6px;
+  min-width: 32px;
+}
+
+.toggle--size-lg {
+  height: 40px;
+  padding: 0 10px;
+  min-width: 40px;
+}

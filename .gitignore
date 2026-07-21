@@ -1,0 +1,53 @@
+node_modules
+packages/*/node_modules
+.env
+.env.*
+**/.env
+**/.env.*
+**/.env.example
+**/.env.*.example
+.env.local
+.DS_Store
+dist
+.vite
+npm-debug.log*
+
+# Secrets
+**/*firebase-adminsdk*.json
+**/supabase_credentials.txt
+**/service-account*.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.crt
+
+# Local tooling secrets
+**/*.postman_environment.json
+**/*.postman_globals.json
+**/postman-environment*.json
+**/.aws/credentials
+**/.aws/config
+*.code-workspace
+
+# Temporary/local scratch files
+tmp-*
+tmp.*
+*.tmp
+*.temp
+**/*.tmp
+**/*.temp
+
+# Deployment/postman local config
+**/vercel.json
+!packages/client/vercel.json
+**/postman/
+
+# Local notes
+**/prisma.md
+
+# Firebase Service Account JSON
+**/service_account.json
+
+# Database credentials
+**/credentials.md

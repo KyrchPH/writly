@@ -1,0 +1,150 @@
+.dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+:global(body.app--public) .dialog__overlay {
+  background: linear-gradient(
+    145deg,
+    rgba(5, 10, 19, 0.62),
+    rgba(7, 17, 28, 0.58)
+  );
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.dialog__overlay[data-state="open"] {
+  animation: dialog-fade-in 200ms ease;
+}
+
+.dialog__overlay[data-state="closed"] {
+  animation: dialog-fade-out 200ms ease;
+}
+
+.dialog__content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: calc(100% - 2rem);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+}
+
+@media (min-width: 640px) {
+  .dialog__content {
+    max-width: 32rem;
+  }
+}
+
+.dialog__content[data-state="open"] {
+  animation: dialog-zoom-in 200ms ease;
+}
+
+.dialog__content[data-state="closed"] {
+  animation: dialog-zoom-out 200ms ease;
+}
+
+.dialog__close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  border-radius: 4px;
+  opacity: 0.7;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: opacity 150ms ease, box-shadow 150ms ease;
+}
+
+.dialog__close:hover {
+  opacity: 1;
+}
+
+.dialog__close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(113, 113, 130, 0.3);
+}
+
+.dialog__close svg {
+  width: 16px;
+  height: 16px;
+}
+
+.dialog__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.dialog__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .dialog__header {
+    text-align: left;
+  }
+}
+
+.dialog__footer {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .dialog__footer {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}
+
+.dialog__title {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.dialog__description {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+@keyframes dialog-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dialog-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes dialog-zoom-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes dialog-zoom-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+}

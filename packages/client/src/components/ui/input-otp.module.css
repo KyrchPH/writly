@@ -1,0 +1,62 @@
+.input-otp__container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.input-otp__group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.input-otp__slot {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-left: none;
+  background: var(--input-background);
+  font-size: 14px;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.input-otp__slot:first-child {
+  border-left: 1px solid var(--border);
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.input-otp__slot:last-child {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+.input-otp__slot[data-active="true"] {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px rgba(113, 113, 130, 0.3);
+  z-index: 1;
+}
+
+.input-otp__caretWrap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.input-otp__caret {
+  width: 1px;
+  height: 16px;
+  background: var(--foreground);
+  animation: input-otp-blink 1s ease-in-out infinite;
+}
+
+@keyframes input-otp-blink {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}

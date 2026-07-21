@@ -1,0 +1,111 @@
+.alert-dialog__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+:global(body.app--public) .alert-dialog__overlay {
+  background: linear-gradient(
+    145deg,
+    rgba(5, 10, 19, 0.62),
+    rgba(7, 17, 28, 0.58)
+  );
+  backdrop-filter: blur(14px) saturate(130%);
+  -webkit-backdrop-filter: blur(14px) saturate(130%);
+}
+
+.alert-dialog__overlay[data-state="open"] {
+  animation: alert-dialog-fade-in 200ms ease;
+}
+
+.alert-dialog__overlay[data-state="closed"] {
+  animation: alert-dialog-fade-out 200ms ease;
+}
+
+.alert-dialog__content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: calc(100% - 2rem);
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.2);
+}
+
+@media (min-width: 640px) {
+  .alert-dialog__content {
+    max-width: 32rem;
+  }
+}
+
+.alert-dialog__content[data-state="open"] {
+  animation: alert-dialog-zoom-in 200ms ease;
+}
+
+.alert-dialog__content[data-state="closed"] {
+  animation: alert-dialog-zoom-out 200ms ease;
+}
+
+.alert-dialog__header {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: center;
+}
+
+@media (min-width: 640px) {
+  .alert-dialog__header {
+    text-align: left;
+  }
+}
+
+.alert-dialog__footer {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+}
+
+@media (min-width: 640px) {
+  .alert-dialog__footer {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}
+
+.alert-dialog__title {
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.alert-dialog__description {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+@keyframes alert-dialog-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes alert-dialog-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes alert-dialog-zoom-in {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes alert-dialog-zoom-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to { opacity: 0; transform: translate(-50%, -50%) scale(0.95); }
+}

@@ -1,0 +1,118 @@
+.command {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 6px;
+}
+
+.command__dialogHeader {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.command__dialogContent {
+  padding: 0;
+  overflow: hidden;
+}
+
+.command__inputWrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px;
+  height: 36px;
+}
+
+.command__inputIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.command__input {
+  flex: 1 1 auto;
+  width: 100%;
+  height: 40px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  outline: none;
+}
+
+.command__list {
+  max-height: 300px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.command__empty {
+  padding: 24px 0;
+  text-align: center;
+  font-size: 14px;
+}
+
+.command__group {
+  padding: 4px;
+  overflow: hidden;
+}
+
+.command__group :global([cmdk-group-heading]) {
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.command__separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0 -4px;
+}
+
+.command__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: default;
+  user-select: none;
+}
+
+.command__item[data-selected="true"] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.command__item[data-disabled="true"] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.command__shortcut {
+  margin-left: auto;
+  font-size: 12px;
+  letter-spacing: 0.15em;
+  color: var(--muted-foreground);
+}
+
+.command__item svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}

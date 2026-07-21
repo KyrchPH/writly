@@ -1,0 +1,64 @@
+.carousel {
+  position: relative;
+}
+
+.carousel__content {
+  overflow: hidden;
+}
+
+.carousel__track {
+  display: flex;
+}
+
+.carousel__track--horizontal {
+  margin-left: -16px;
+}
+
+.carousel__track--vertical {
+  margin-top: -16px;
+  flex-direction: column;
+}
+
+.carousel__item {
+  min-width: 0;
+  flex: 0 0 100%;
+}
+
+.carousel__item--horizontal {
+  padding-left: 16px;
+}
+
+.carousel__item--vertical {
+  padding-top: 16px;
+}
+
+.carousel__control {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+}
+
+.carousel__control--prevHorizontal {
+  top: 50%;
+  left: -48px;
+  transform: translateY(-50%);
+}
+
+.carousel__control--nextHorizontal {
+  top: 50%;
+  right: -48px;
+  transform: translateY(-50%);
+}
+
+.carousel__control--prevVertical {
+  top: -48px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+}
+
+.carousel__control--nextVertical {
+  bottom: -48px;
+  left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+}

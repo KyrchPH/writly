@@ -1,0 +1,10 @@
+.skeleton {
+  background: var(--accent);
+  border-radius: 6px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}

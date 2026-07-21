@@ -1,0 +1,18 @@
+.form__item {
+  display: grid;
+  gap: 8px;
+}
+
+.form__label[data-error="true"] {
+  color: var(--destructive);
+}
+
+.form__description {
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+
+.form__message {
+  font-size: 14px;
+  color: var(--destructive);
+}

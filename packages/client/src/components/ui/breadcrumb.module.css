@@ -1,0 +1,65 @@
+.breadcrumb__list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+  word-break: break-word;
+}
+
+@media (min-width: 640px) {
+  .breadcrumb__list {
+    gap: 10px;
+  }
+}
+
+.breadcrumb__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breadcrumb__link {
+  color: inherit;
+  transition: color 200ms ease;
+}
+
+.breadcrumb__link:hover {
+  color: var(--foreground);
+}
+
+.breadcrumb__page {
+  color: var(--foreground);
+  font-weight: 400;
+}
+
+.breadcrumb__separator svg {
+  width: 14px;
+  height: 14px;
+}
+
+.breadcrumb__ellipsis {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+}
+
+.breadcrumb__ellipsisIcon {
+  width: 16px;
+  height: 16px;
+}
+
+.breadcrumb__srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

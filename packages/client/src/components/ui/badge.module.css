@@ -1,0 +1,51 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  width: fit-content;
+  white-space: nowrap;
+  gap: 4px;
+  overflow: hidden;
+  transition: color 200ms ease, box-shadow 200ms ease, background 200ms ease;
+}
+
+.badge svg {
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.badge:focus-visible {
+  box-shadow: 0 0 0 3px rgba(113, 113, 130, 0.3);
+}
+
+.badge--default {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.badge--secondary {
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+}
+
+.badge--destructive {
+  background: var(--destructive);
+  color: #ffffff;
+}
+
+.badge--outline {
+  border-color: var(--border);
+  color: var(--foreground);
+  background: transparent;
+}
+
+.badge--outline:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
