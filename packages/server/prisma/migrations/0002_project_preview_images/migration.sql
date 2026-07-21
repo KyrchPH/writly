@@ -1,1 +1,0 @@
-ALTER TABLE "Project" ADD COLUMN "previewImages" TEXT[] DEFAULT ARRAY[]::TEXT[];
