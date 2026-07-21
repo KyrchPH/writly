@@ -7,18 +7,12 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json",
     "lint": "echo \"add lint if needed\"",
     "health:check": "tsx scripts/health-check.ts",
-    "gmail:oauth": "tsx scripts/gmail-oauth.ts",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:deploy": "prisma migrate deploy",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "gmail:oauth": "tsx scripts/gmail-oauth.ts"
   },
   "dependencies": {
-    "@prisma/client": "^6.5.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -26,6 +20,7 @@
     "firebase-admin": "^13.9.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "mongodb": "^7.5.0",
     "morgan": "^1.10.0",
     "zod": "^3.24.2"
   },
@@ -35,7 +30,6 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.13.10",
-    "prisma": "^6.5.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2"
   }

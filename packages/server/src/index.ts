@@ -4,7 +4,7 @@ import helmet from "helmet";
 import morgan from "morgan";
 import { env, isProd } from "./config/env.js";
 import { recordBackendError } from "./controllers/analytics.controller.js";
-import { prisma } from "./lib/prisma.js";
+import { db, ensureDatabaseIndexes } from "./lib/db.js";
 import { authRouter } from "./routes/auth.routes.js";
 import {
   adminAnalyticsRouter,
@@ -71,7 +71,7 @@ app.get("/api/health", (_req, res) => {
 app.get("/api/health/ready", async (_req, res) => {
   let database: "up" | "down" = "up";
   try {
-    await prisma.$queryRawUnsafe("SELECT 1");
+    await db.$ping();
   } catch {
     database = "down";
   }
@@ -134,6 +134,10 @@ const server = app.listen(env.PORT, "0.0.0.0", () => {
   console.log(`Server listening on http://0.0.0.0:${env.PORT}`);
 });
 
+void ensureDatabaseIndexes().catch((error) => {
+  console.error("Failed to ensure MongoDB indexes.", error);
+});
+
 const reviewInvitationCleanupTimer = setInterval(() => {
   void cleanupExpiredReviewInvitations().catch((error) => {
     console.error("Failed to clean expired review invitations.", error);
@@ -147,7 +151,7 @@ void cleanupExpiredReviewInvitations().catch((error) => {
 const shutdown = async () => {
   clearInterval(reviewInvitationCleanupTimer);
   server.close(async () => {
-    await prisma.$disconnect();
+    await db.$disconnect();
     process.exit(0);
   });
 };

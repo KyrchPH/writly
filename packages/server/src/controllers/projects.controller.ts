@@ -1,13 +1,18 @@
-import { ProjectStatus } from "@prisma/client";
 import type { RequestHandler, Response } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalTextSchema,
   optionalUrlSchema,
   sendValidationError,
 } from "./helpers.js";
+
+const ProjectStatus = {
+  Draft: "Draft",
+  Published: "Published",
+  Archived: "Archived",
+} as const;
 
 const projectQuerySchema = z.object({
   search: z.string().optional(),
@@ -24,7 +29,7 @@ const projectBaseSchema = z.object({
   portraitImageUrl: optionalUrlSchema,
   landscapeImageUrl: optionalUrlSchema,
   previewImages: z.array(z.string().url()).default([]),
-  status: z.nativeEnum(ProjectStatus).default(ProjectStatus.Draft),
+  status: z.enum([ProjectStatus.Draft, ProjectStatus.Published, ProjectStatus.Archived]).default(ProjectStatus.Draft),
   isFeatured: z.boolean().default(false),
   isPinned: z.boolean().default(false),
   timeline: optionalTextSchema(140),
@@ -85,7 +90,7 @@ const projectPatchSchema = projectBaseSchema
   });
 
 const hasFeaturedProjectCapacity = async (excludedProjectId?: string) => {
-  const featuredCount = await prisma.project.count({
+  const featuredCount = await db.project.count({
     where: {
       isFeatured: true,
       ...(excludedProjectId ? { NOT: { id: excludedProjectId } } : {}),
@@ -102,7 +107,7 @@ const sendFeaturedLimitError = (res: Response) => {
 };
 
 export const listAdminProjects: RequestHandler = async (_req, res) => {
-  const projects = await prisma.project.findMany({
+  const projects = await db.project.findMany({
     orderBy: { updatedAt: "desc" },
   });
   res.status(200).json({ data: projects });
@@ -115,7 +120,7 @@ export const getAdminProjectById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const project = await prisma.project.findUnique({ where: { id } });
+  const project = await db.project.findUnique({ where: { id } });
   if (!project) {
     res.status(404).json({ message: "Project not found." });
     return;
@@ -136,7 +141,7 @@ export const createProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const project = await prisma.project.create({ data: parsed.data });
+  const project = await db.project.create({ data: parsed.data });
   res.status(201).json({ data: project });
 };
 
@@ -153,7 +158,7 @@ export const replaceProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.project.findUnique({ where: { id } });
+  const existing = await db.project.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Project not found." });
     return;
@@ -164,7 +169,7 @@ export const replaceProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const project = await prisma.project.update({
+  const project = await db.project.update({
     where: { id },
     data: parsed.data,
   });
@@ -184,7 +189,7 @@ export const patchProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.project.findUnique({ where: { id } });
+  const existing = await db.project.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Project not found." });
     return;
@@ -195,7 +200,7 @@ export const patchProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const project = await prisma.project.update({
+  const project = await db.project.update({
     where: { id },
     data: parsed.data,
   });
@@ -209,13 +214,13 @@ export const deleteProject: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.project.findUnique({ where: { id } });
+  const existing = await db.project.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Project not found." });
     return;
   }
 
-  await prisma.project.delete({ where: { id } });
+  await db.project.delete({ where: { id } });
   res.status(204).send();
 };
 
@@ -229,7 +234,7 @@ export const listPublicProjects: RequestHandler = async (req, res) => {
   const search = parsedQuery.data.search?.trim();
   const category = parsedQuery.data.category?.trim();
 
-  const projects = await prisma.project.findMany({
+  const projects = await db.project.findMany({
     where: {
       status: ProjectStatus.Published,
       ...(category && category !== "All" ? { category } : {}),
@@ -256,7 +261,7 @@ export const getPublicProjectById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const project = await prisma.project.findFirst({
+  const project = await db.project.findFirst({
     where: { id, status: ProjectStatus.Published },
   });
   if (!project) {

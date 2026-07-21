@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { verifyAccessToken } from "../utils/jwt.js";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
@@ -13,7 +13,7 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
   try {
     const payload = verifyAccessToken(token);
 
-    const user = await prisma.adminUser.findUnique({
+    const user = await db.adminUser.findUnique({
       where: { id: payload.sub },
       select: { isApproved: true },
     });

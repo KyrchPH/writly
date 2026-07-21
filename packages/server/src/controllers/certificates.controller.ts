@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalUrlSchema,
@@ -22,7 +22,7 @@ const certificatePatchSchema = certificateCreateSchema
   });
 
 export const listAdminCertificates: RequestHandler = async (_req, res) => {
-  const certificates = await prisma.certificate.findMany({
+  const certificates = await db.certificate.findMany({
     orderBy: { issueDate: "desc" },
   });
   res.status(200).json({ data: certificates });
@@ -35,7 +35,7 @@ export const getAdminCertificateById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const certificate = await prisma.certificate.findUnique({ where: { id } });
+  const certificate = await db.certificate.findUnique({ where: { id } });
   if (!certificate) {
     res.status(404).json({ message: "Certificate not found." });
     return;
@@ -51,7 +51,7 @@ export const createCertificate: RequestHandler = async (req, res) => {
     return;
   }
 
-  const certificate = await prisma.certificate.create({ data: parsed.data });
+  const certificate = await db.certificate.create({ data: parsed.data });
   res.status(201).json({ data: certificate });
 };
 
@@ -68,13 +68,13 @@ export const replaceCertificate: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.certificate.findUnique({ where: { id } });
+  const existing = await db.certificate.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Certificate not found." });
     return;
   }
 
-  const certificate = await prisma.certificate.update({
+  const certificate = await db.certificate.update({
     where: { id },
     data: parsed.data,
   });
@@ -94,13 +94,13 @@ export const patchCertificate: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.certificate.findUnique({ where: { id } });
+  const existing = await db.certificate.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Certificate not found." });
     return;
   }
 
-  const certificate = await prisma.certificate.update({
+  const certificate = await db.certificate.update({
     where: { id },
     data: parsed.data,
   });
@@ -114,18 +114,18 @@ export const deleteCertificate: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.certificate.findUnique({ where: { id } });
+  const existing = await db.certificate.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Certificate not found." });
     return;
   }
 
-  await prisma.certificate.delete({ where: { id } });
+  await db.certificate.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const listPublicCertificates: RequestHandler = async (_req, res) => {
-  const certificates = await prisma.certificate.findMany({
+  const certificates = await db.certificate.findMany({
     orderBy: { issueDate: "desc" },
   });
   res.status(200).json({ data: certificates });
@@ -138,7 +138,7 @@ export const getPublicCertificateById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const certificate = await prisma.certificate.findUnique({ where: { id } });
+  const certificate = await db.certificate.findUnique({ where: { id } });
   if (!certificate) {
     res.status(404).json({ message: "Certificate not found." });
     return;

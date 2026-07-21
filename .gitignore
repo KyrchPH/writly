@@ -14,7 +14,6 @@ npm-debug.log*
 
 # Secrets
 **/*firebase-adminsdk*.json
-**/supabase_credentials.txt
 **/service-account*.json
 **/*.pem
 **/*.key
@@ -44,7 +43,6 @@ tmp.*
 **/postman/
 
 # Local notes
-**/prisma.md
 
 # Firebase Service Account JSON
 **/service_account.json

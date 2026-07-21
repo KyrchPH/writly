@@ -3,7 +3,7 @@ import type { RequestHandler } from "express";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { sendReviewInvitationEmail } from "../lib/mailer.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalTextSchema,
@@ -40,7 +40,7 @@ const buildReviewUrl = (token: string) =>
   `${env.PUBLIC_APP_URL.replace(/\/+$/, "")}/review/${token}`;
 
 export const cleanupExpiredReviewInvitations = async () => {
-  await prisma.reviewInvitation.deleteMany({
+  await db.reviewInvitation.deleteMany({
     where: {
       expiresAt: {
         lte: new Date(),
@@ -94,7 +94,7 @@ const serializeClient = (client: {
 };
 
 const getClientWithInvitation = async (id: string) =>
-  prisma.client.findUnique({
+  db.client.findUnique({
     where: { id },
     include: {
       invitations: {
@@ -109,7 +109,7 @@ const getClientWithInvitation = async (id: string) =>
 
 export const listAdminClients: RequestHandler = async (_req, res) => {
   await cleanupExpiredReviewInvitations();
-  const clients = await prisma.client.findMany({
+  const clients = await db.client.findMany({
     orderBy: { updatedAt: "desc" },
     include: {
       invitations: {
@@ -150,7 +150,7 @@ export const createAdminClient: RequestHandler = async (req, res) => {
   }
 
   try {
-    const client = await prisma.client.create({
+    const client = await db.client.create({
       data: {
         ...parsed.data,
         email: normalizeEmail(parsed.data.email),
@@ -194,14 +194,14 @@ export const patchAdminClient: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.client.findUnique({ where: { id } });
+  const existing = await db.client.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Client not found." });
     return;
   }
 
   try {
-    const client = await prisma.client.update({
+    const client = await db.client.update({
       where: { id },
       data: {
         ...parsed.data,
@@ -240,13 +240,13 @@ export const deleteAdminClient: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.client.findUnique({ where: { id } });
+  const existing = await db.client.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Client not found." });
     return;
   }
 
-  await prisma.client.delete({ where: { id } });
+  await db.client.delete({ where: { id } });
   res.status(204).send();
 };
 
@@ -258,7 +258,7 @@ export const sendAdminClientReviewInvitation: RequestHandler = async (req, res) 
     return;
   }
 
-  const client = await prisma.client.findUnique({ where: { id } });
+  const client = await db.client.findUnique({ where: { id } });
   if (!client) {
     res.status(404).json({ message: "Client not found." });
     return;
@@ -269,7 +269,7 @@ export const sendAdminClientReviewInvitation: RequestHandler = async (req, res) 
   const expiresAt = getInvitationExpiry();
   const reviewUrl = buildReviewUrl(token);
 
-  const invitation = await prisma.$transaction(async (tx) => {
+  const invitation = await db.$transaction(async (tx: any) => {
     await tx.reviewInvitation.deleteMany({ where: { clientId: id } });
     return tx.reviewInvitation.create({
       data: {
@@ -326,7 +326,7 @@ export const sendAdminClientReviewInvitation: RequestHandler = async (req, res) 
 export const getReviewInvitationByToken = async (token: string) => {
   await cleanupExpiredReviewInvitations();
   const tokenHash = hashReviewInvitationToken(token);
-  return prisma.reviewInvitation.findUnique({
+  return db.reviewInvitation.findUnique({
     where: { tokenHash },
     include: { client: true },
   });

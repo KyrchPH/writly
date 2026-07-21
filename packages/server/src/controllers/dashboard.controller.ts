@@ -1,15 +1,15 @@
 import type { RequestHandler } from "express";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 
 export const getDashboardStats: RequestHandler = async (req, res) => {
   const userId = req.user?.sub;
   const [projects, services, certificates, reviews, loginLogs] = await Promise.all([
-    prisma.project.count(),
-    prisma.service.count(),
-    prisma.certificate.count(),
-    prisma.review.count(),
+    db.project.count(),
+    db.service.count(),
+    db.certificate.count(),
+    db.review.count(),
     userId
-      ? prisma.adminLoginLog.findMany({
+      ? db.adminLoginLog.findMany({
           where: { userId },
           orderBy: { createdAt: "desc" },
           take: 5,

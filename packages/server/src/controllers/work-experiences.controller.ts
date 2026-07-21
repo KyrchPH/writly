@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalUrlSchema,
@@ -26,7 +26,7 @@ const workExperiencePatchSchema = workExperienceCreateSchema
   });
 
 export const listAdminWorkExperiences: RequestHandler = async (_req, res) => {
-  const workExperiences = await prisma.workExperience.findMany({
+  const workExperiences = await db.workExperience.findMany({
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
   res.status(200).json({ data: workExperiences });
@@ -39,7 +39,7 @@ export const getAdminWorkExperienceById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const workExperience = await prisma.workExperience.findUnique({ where: { id } });
+  const workExperience = await db.workExperience.findUnique({ where: { id } });
   if (!workExperience) {
     res.status(404).json({ message: "Work experience not found." });
     return;
@@ -55,7 +55,7 @@ export const createWorkExperience: RequestHandler = async (req, res) => {
     return;
   }
 
-  const workExperience = await prisma.workExperience.create({ data: parsed.data });
+  const workExperience = await db.workExperience.create({ data: parsed.data });
   res.status(201).json({ data: workExperience });
 };
 
@@ -72,13 +72,13 @@ export const replaceWorkExperience: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.workExperience.findUnique({ where: { id } });
+  const existing = await db.workExperience.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Work experience not found." });
     return;
   }
 
-  const workExperience = await prisma.workExperience.update({
+  const workExperience = await db.workExperience.update({
     where: { id },
     data: parsed.data,
   });
@@ -98,13 +98,13 @@ export const patchWorkExperience: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.workExperience.findUnique({ where: { id } });
+  const existing = await db.workExperience.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Work experience not found." });
     return;
   }
 
-  const workExperience = await prisma.workExperience.update({
+  const workExperience = await db.workExperience.update({
     where: { id },
     data: parsed.data,
   });
@@ -118,18 +118,18 @@ export const deleteWorkExperience: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.workExperience.findUnique({ where: { id } });
+  const existing = await db.workExperience.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Work experience not found." });
     return;
   }
 
-  await prisma.workExperience.delete({ where: { id } });
+  await db.workExperience.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const listPublicWorkExperiences: RequestHandler = async (_req, res) => {
-  const workExperiences = await prisma.workExperience.findMany({
+  const workExperiences = await db.workExperience.findMany({
     where: { isPublished: true },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
@@ -143,7 +143,7 @@ export const getPublicWorkExperienceById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const workExperience = await prisma.workExperience.findFirst({
+  const workExperience = await db.workExperience.findFirst({
     where: { id, isPublished: true },
   });
   if (!workExperience) {

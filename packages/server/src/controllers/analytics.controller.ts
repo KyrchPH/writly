@@ -1,6 +1,6 @@
 import type { Request, RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { normalizeRouteParam, sendValidationError } from "./helpers.js";
 
 const DEFAULT_DAYS = 30;
@@ -75,7 +75,7 @@ export const recordPublicVisit: RequestHandler = async (req, res) => {
   const userAgent = truncate(req.get("user-agent"), 512);
 
   try {
-    const visitor = await prisma.visitor.upsert({
+    const visitor = await db.visitor.upsert({
       where: { visitorKey: parsed.data.visitorKey },
       update: {
         lastSeenAt: now,
@@ -89,7 +89,7 @@ export const recordPublicVisit: RequestHandler = async (req, res) => {
       },
     });
 
-    await prisma.visitorEvent.create({
+    await db.visitorEvent.create({
       data: {
         visitorId: visitor.id,
         visitorKey: visitor.visitorKey,
@@ -115,10 +115,10 @@ export const recordPublicErrorLog: RequestHandler = async (req, res) => {
 
   try {
     const visitor = parsed.data.visitorKey
-      ? await prisma.visitor.findUnique({ where: { visitorKey: parsed.data.visitorKey } })
+      ? await db.visitor.findUnique({ where: { visitorKey: parsed.data.visitorKey } })
       : null;
 
-    await prisma.errorLog.create({
+    await db.errorLog.create({
       data: {
         source: "frontend",
         message: parsed.data.message,
@@ -149,18 +149,18 @@ export const getAdminAnalytics: RequestHandler = async (req, res) => {
 
   const [totalUniqueVisitors, totalVisits, todayVisits, repeatVisitors, rangeEvents] =
     await Promise.all([
-      prisma.visitor.count(),
-      prisma.visitorEvent.count(),
-      prisma.visitorEvent.count({ where: { createdAt: { gte: todayStart } } }),
-      prisma.visitor.count({ where: { visitCount: { gt: 1 } } }),
-      prisma.visitorEvent.findMany({
+      db.visitor.count(),
+      db.visitorEvent.count(),
+      db.visitorEvent.count({ where: { createdAt: { gte: todayStart } } }),
+      db.visitor.count({ where: { visitCount: { gt: 1 } } }),
+      db.visitorEvent.findMany({
         where: { createdAt: { gte: rangeStart } },
         select: { createdAt: true, visitorKey: true },
         orderBy: { createdAt: "asc" },
       }),
     ]);
 
-  rangeEvents.forEach((event) => {
+  rangeEvents.forEach((event: any) => {
     const key = toUtcDay(event.createdAt);
     const bucket = visitsByDay.get(key);
     if (!bucket) return;
@@ -193,22 +193,22 @@ export const getAdminErrorLogs: RequestHandler = async (req, res) => {
 
   const [openErrors, frontendErrors, backendErrors, latestError, errors, rangeErrors] =
     await Promise.all([
-      prisma.errorLog.count(),
-      prisma.errorLog.count({ where: { source: "frontend" } }),
-      prisma.errorLog.count({ where: { source: "backend" } }),
-      prisma.errorLog.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
-      prisma.errorLog.findMany({
+      db.errorLog.count(),
+      db.errorLog.count({ where: { source: "frontend" } }),
+      db.errorLog.count({ where: { source: "backend" } }),
+      db.errorLog.findFirst({ orderBy: { createdAt: "desc" }, select: { createdAt: true } }),
+      db.errorLog.findMany({
         orderBy: { createdAt: "desc" },
         take: 100,
       }),
-      prisma.errorLog.findMany({
+      db.errorLog.findMany({
         where: { createdAt: { gte: rangeStart } },
         select: { createdAt: true, source: true },
         orderBy: { createdAt: "asc" },
       }),
     ]);
 
-  rangeErrors.forEach((error) => {
+  rangeErrors.forEach((error: any) => {
     const key = toUtcDay(error.createdAt);
     const bucket = errorsByDay.get(key);
     if (!bucket) return;
@@ -239,20 +239,20 @@ export const deleteAdminErrorLog: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.errorLog.findUnique({ where: { id } });
+  const existing = await db.errorLog.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Error log not found." });
     return;
   }
 
-  await prisma.errorLog.delete({ where: { id } });
+  await db.errorLog.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const recordBackendError = async (error: unknown, req: Request) => {
   try {
     const err = error instanceof Error ? error : new Error("Unknown backend error");
-    await prisma.errorLog.create({
+    await db.errorLog.create({
       data: {
         source: "backend",
         message: truncate(err.message, 1000) ?? "Unknown backend error",

@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalUrlSchema,
@@ -22,7 +22,7 @@ const bannerPatchSchema = bannerCreateSchema
   });
 
 export const listAdminBanners: RequestHandler = async (_req, res) => {
-  const banners = await prisma.banner.findMany({
+  const banners = await db.banner.findMany({
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
   res.status(200).json({ data: banners });
@@ -35,7 +35,7 @@ export const getAdminBannerById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const banner = await prisma.banner.findUnique({ where: { id } });
+  const banner = await db.banner.findUnique({ where: { id } });
   if (!banner) {
     res.status(404).json({ message: "Banner not found." });
     return;
@@ -51,7 +51,7 @@ export const createBanner: RequestHandler = async (req, res) => {
     return;
   }
 
-  const banner = await prisma.banner.create({ data: parsed.data });
+  const banner = await db.banner.create({ data: parsed.data });
   res.status(201).json({ data: banner });
 };
 
@@ -68,13 +68,13 @@ export const replaceBanner: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.banner.findUnique({ where: { id } });
+  const existing = await db.banner.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Banner not found." });
     return;
   }
 
-  const banner = await prisma.banner.update({
+  const banner = await db.banner.update({
     where: { id },
     data: parsed.data,
   });
@@ -94,13 +94,13 @@ export const patchBanner: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.banner.findUnique({ where: { id } });
+  const existing = await db.banner.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Banner not found." });
     return;
   }
 
-  const banner = await prisma.banner.update({
+  const banner = await db.banner.update({
     where: { id },
     data: parsed.data,
   });
@@ -114,18 +114,18 @@ export const deleteBanner: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.banner.findUnique({ where: { id } });
+  const existing = await db.banner.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Banner not found." });
     return;
   }
 
-  await prisma.banner.delete({ where: { id } });
+  await db.banner.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const listPublicBanners: RequestHandler = async (_req, res) => {
-  const banners = await prisma.banner.findMany({
+  const banners = await db.banner.findMany({
     where: { isPublished: true },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
@@ -139,7 +139,7 @@ export const getPublicBannerById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const banner = await prisma.banner.findFirst({
+  const banner = await db.banner.findFirst({
     where: { id, isPublished: true },
   });
   if (!banner) {

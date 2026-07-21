@@ -3,7 +3,7 @@ import type { RequestHandler } from "express";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { sendContractEmail } from "../lib/mailer.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { normalizeRouteParam, sendValidationError } from "./helpers.js";
 
 const optionalEmailSchema = z.preprocess(
@@ -227,7 +227,7 @@ const serializeContract = (contract: {
 });
 
 const listTemplates = () =>
-  prisma.contractTemplate.findMany({
+  db.contractTemplate.findMany({
     orderBy: { updatedAt: "desc" },
     include: {
       _count: {
@@ -237,7 +237,7 @@ const listTemplates = () =>
   });
 
 const listContracts = () =>
-  prisma.contract.findMany({
+  db.contract.findMany({
     orderBy: { createdAt: "desc" },
     include: {
       template: {
@@ -266,7 +266,7 @@ export const createAdminContractTemplate: RequestHandler = async (req, res) => {
   }
 
   const fields = normalizeFields(parsed.data.fields);
-  const template = await prisma.contractTemplate.create({
+  const template = await db.contractTemplate.create({
     data: {
       name: parsed.data.name,
       title: parsed.data.title,
@@ -294,13 +294,13 @@ export const deleteAdminContractTemplate: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.contractTemplate.findUnique({ where: { id } });
+  const existing = await db.contractTemplate.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Contract template not found." });
     return;
   }
 
-  await prisma.contractTemplate.delete({ where: { id } });
+  await db.contractTemplate.delete({ where: { id } });
   res.status(204).send();
 };
 
@@ -311,7 +311,7 @@ export const createAdminContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const template = await prisma.contractTemplate.findUnique({
+  const template = await db.contractTemplate.findUnique({
     where: { id: parsed.data.templateId },
   });
 
@@ -320,7 +320,7 @@ export const createAdminContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const contract = await prisma.contract.create({
+  const contract = await db.contract.create({
     data: {
       templateId: template.id,
       title: parsed.data.title?.trim() || template.title,
@@ -354,7 +354,7 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
     return;
   }
 
-  const contract = await prisma.contract.findUnique({
+  const contract = await db.contract.findUnique({
     where: { id },
     include: {
       template: {
@@ -397,7 +397,7 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
     return;
   }
 
-  const updatedContract = await prisma.contract.update({
+  const updatedContract = await db.contract.update({
     where: { id },
     data: { sentAt: new Date() },
     include: {
@@ -425,13 +425,13 @@ export const deleteAdminContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.contract.findUnique({ where: { id } });
+  const existing = await db.contract.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Contract not found." });
     return;
   }
 
-  await prisma.contract.delete({ where: { id } });
+  await db.contract.delete({ where: { id } });
   res.status(204).send();
 };
 
@@ -443,7 +443,7 @@ export const getPublicContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const contract = await prisma.contract.findUnique({ where: { id } });
+  const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) {
     res.status(404).json({ message: "Contract link unavailable." });
     return;
@@ -451,7 +451,7 @@ export const getPublicContract: RequestHandler = async (req, res) => {
 
   const viewedAt = contract.viewedAt ?? new Date();
   if (!contract.viewedAt) {
-    await prisma.contract.update({
+    await db.contract.update({
       where: { id },
       data: { viewedAt },
     });
@@ -492,7 +492,7 @@ export const submitPublicContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const contract = await prisma.contract.findUnique({ where: { id } });
+  const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) {
     res.status(404).json({ message: "Contract link unavailable." });
     return;
@@ -535,7 +535,7 @@ export const submitPublicContract: RequestHandler = async (req, res) => {
     return;
   }
 
-  const updatedContract = await prisma.contract.update({
+  const updatedContract = await db.contract.update({
     where: { id },
     data: {
       values,

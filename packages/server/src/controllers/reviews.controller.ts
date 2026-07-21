@@ -4,7 +4,7 @@ import {
   cleanupExpiredReviewInvitations,
   hashReviewInvitationToken,
 } from "./clients.controller.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalTextSchema,
@@ -75,7 +75,7 @@ const serializeReview = (review: {
 });
 
 export const listAdminReviews: RequestHandler = async (_req, res) => {
-  const reviews = await prisma.review.findMany({
+  const reviews = await db.review.findMany({
     orderBy: [{ status: "desc" }, { updatedAt: "desc" }],
     include: {
       client: {
@@ -97,7 +97,7 @@ export const getAdminReviewById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const review = await prisma.review.findUnique({
+  const review = await db.review.findUnique({
     where: { id },
     include: {
       client: {
@@ -130,13 +130,13 @@ export const replaceReview: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.review.findUnique({ where: { id } });
+  const existing = await db.review.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Review not found." });
     return;
   }
 
-  const review = await prisma.review.update({
+  const review = await db.review.update({
     where: { id },
     data: parsed.data,
     include: {
@@ -165,13 +165,13 @@ export const patchReview: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.review.findUnique({ where: { id } });
+  const existing = await db.review.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Review not found." });
     return;
   }
 
-  const review = await prisma.review.update({
+  const review = await db.review.update({
     where: { id },
     data: parsed.data,
     include: {
@@ -194,13 +194,13 @@ export const approveReview: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.review.findUnique({ where: { id } });
+  const existing = await db.review.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Review not found." });
     return;
   }
 
-  const review = await prisma.review.update({
+  const review = await db.review.update({
     where: { id },
     data: {
       status: "Approved",
@@ -227,18 +227,18 @@ export const deleteReview: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.review.findUnique({ where: { id } });
+  const existing = await db.review.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Review not found." });
     return;
   }
 
-  await prisma.review.delete({ where: { id } });
+  await db.review.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const listPublicReviews: RequestHandler = async (_req, res) => {
-  const reviews = await prisma.review.findMany({
+  const reviews = await db.review.findMany({
     where: {
       status: "Approved",
       isPublished: true,
@@ -255,7 +255,7 @@ export const getPublicReviewById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const review = await prisma.review.findFirst({
+  const review = await db.review.findFirst({
     where: {
       id,
       status: "Approved",
@@ -279,7 +279,7 @@ export const getPublicReviewInvitation: RequestHandler = async (req, res) => {
     return;
   }
 
-  const invitation = await prisma.reviewInvitation.findUnique({
+  const invitation = await db.reviewInvitation.findUnique({
     where: { tokenHash: hashReviewInvitationToken(parsedToken.data) },
     include: { client: true },
   });
@@ -290,7 +290,7 @@ export const getPublicReviewInvitation: RequestHandler = async (req, res) => {
   }
 
   if (invitation.expiresAt.getTime() <= Date.now()) {
-    await prisma.reviewInvitation.delete({ where: { id: invitation.id } }).catch(() => {
+    await db.reviewInvitation.delete({ where: { id: invitation.id } }).catch(() => {
       // The link is already unusable; cleanup can be retried later.
     });
     res.status(410).json({ message: "Review invitation has expired." });
@@ -322,7 +322,7 @@ export const submitPublicReviewInvitation: RequestHandler = async (req, res) => 
   }
 
   const tokenHash = hashReviewInvitationToken(parsedToken.data);
-  const invitation = await prisma.reviewInvitation.findUnique({
+  const invitation = await db.reviewInvitation.findUnique({
     where: { tokenHash },
     include: { client: true },
   });
@@ -333,7 +333,7 @@ export const submitPublicReviewInvitation: RequestHandler = async (req, res) => 
   }
 
   if (invitation.expiresAt.getTime() <= Date.now()) {
-    await prisma.reviewInvitation.delete({ where: { id: invitation.id } }).catch(() => {
+    await db.reviewInvitation.delete({ where: { id: invitation.id } }).catch(() => {
       // The link is already unusable; cleanup can be retried later.
     });
     res.status(410).json({ message: "Review invitation has expired." });
@@ -341,7 +341,7 @@ export const submitPublicReviewInvitation: RequestHandler = async (req, res) => 
   }
 
   try {
-    const review = await prisma.$transaction(async (tx) => {
+    const review = await db.$transaction(async (tx: any) => {
       const lockedInvitation = await tx.reviewInvitation.findUnique({
         where: { tokenHash },
         include: { client: true },

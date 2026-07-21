@@ -2,19 +2,15 @@
 
 ## Stack
 - `Express` + `TypeScript`
-- `Prisma` + `PostgreSQL`
+- MongoDB Atlas with the official `mongodb` driver
 - `JWT` auth (`signup`, `login`, `me`)
 
 ## Local setup
 1. Copy `.env.example` to `.env` and update values.
 2. Install dependencies from repo root:
    - `npm install`
-3. Generate Prisma client:
-   - `npm run db:generate --workspace server`
-4. Create database schema:
-   - `npm run db:push --workspace server`
-   - or `npm run db:migrate --workspace server`
-5. Start API:
+3. Set `DATABASE_URL` to your MongoDB connection string and optionally set `MONGODB_DB_NAME` (default `writly`).
+4. Start API:
    - `npm run dev --workspace server`
 
 ### Required env for Firebase Storage
@@ -73,8 +69,8 @@
   - optional env: `API_HEALTH_URL`, `API_HEALTH_TIMEOUT_MS`
 
 ## Cron routes
-- `GET /api/cron/supabase-keepalive`
-  - Runs a lightweight `SELECT 1` against the configured Supabase/PostgreSQL database.
+- `GET /api/cron/mongodb-keepalive` (`/api/cron/database-keepalive` is retained as an alias)
+  - Runs a lightweight ping against the configured MongoDB database.
   - Use this from a cron monitor to keep the database active.
   - If `CRON_KEEPALIVE_SECRET` is set, include either:
     - `Authorization: Bearer <CRON_KEEPALIVE_SECRET>`
@@ -165,24 +161,7 @@
 - Health Check Path:
   - `/api/health`
 
-### Why we do not run `db:deploy` in Start Command
-1. Render expects the web process to bind a port quickly.
-2. `prisma migrate deploy` can block on DB connection/pooler/locks, so the service may never open a port in time.
-3. Migrations should run once per release, not on every restart/scale event.
-
-### Proper release order (with schema changes)
-1. Create migration locally:
-   - `npx prisma migrate dev --name <change_name>`
-2. Commit both schema and migration files:
-   - `git add prisma/schema.prisma prisma/migrations`
-   - `git commit -m "feat(db): <change_name>"`
-3. Push code to GitHub.
-4. Run production migration manually (Render Shell or local terminal pointed to prod DB):
-   - `cd /opt/render/project/src/packages/server`
-   - `npx prisma migrate deploy`
-5. Trigger/confirm deploy (service starts with `npm run start`).
-6. Verify health endpoint:
-   - `GET /api/health`
+MongoDB collections and required unique indexes are created automatically when the server starts.
 
 ## Firebase Storage upload flow
 1. Call `POST /api/admin/uploads/sign` with `filename`, `contentType`, and optional `folder`.

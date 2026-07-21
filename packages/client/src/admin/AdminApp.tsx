@@ -2586,6 +2586,8 @@ export default function AdminApp() {
   const [resetToken, setResetToken] = useState("");
   const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
   const [isSignupSubmitting, setIsSignupSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
+  const googleButtonRef = useRef<HTMLDivElement>(null);
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [adminError, setAdminError] = useState<AdminScopedError | null>(null);
@@ -4325,6 +4327,78 @@ export default function AdminApp() {
       setIsLoginSubmitting(false);
     }
   };
+
+  const handleGoogleCredential = async (credential: string) => {
+    if (isGoogleSubmitting) return;
+    setAuthError("");
+    setAuthNotice("");
+    setIsGoogleSubmitting(true);
+
+    try {
+      const response = await requestJson<{
+        token?: string;
+        user?: ApiUser;
+        message?: string;
+      }>("/auth/google", {
+        method: "POST",
+        body: JSON.stringify({ credential }),
+      });
+
+      if (response.token && response.user) {
+        await handleAuthSuccess(response.token, response.user);
+        return;
+      }
+      setAuthNotice(response.message || "Google account submitted for approval.");
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Google sign-in failed.");
+    } finally {
+      setIsGoogleSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    if (token || (authMode !== "login" && authMode !== "signup")) return;
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
+    if (!clientId) return;
+
+    let cancelled = false;
+    const renderGoogleButton = () => {
+      const google = (window as Window & { google?: any }).google;
+      if (cancelled || !google?.accounts?.id || !googleButtonRef.current) return;
+      google.accounts.id.initialize({
+        client_id: clientId,
+        callback: ({ credential }: { credential?: string }) => {
+          if (credential) void handleGoogleCredential(credential);
+        },
+      });
+      googleButtonRef.current.replaceChildren();
+      google.accounts.id.renderButton(googleButtonRef.current, {
+        type: "standard",
+        theme: theme === "dark" ? "filled_black" : "outline",
+        size: "large",
+        shape: "rectangular",
+        text: authMode === "signup" ? "signup_with" : "signin_with",
+        width: Math.min(420, googleButtonRef.current.clientWidth || 420),
+      });
+    };
+
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[src="https://accounts.google.com/gsi/client"]',
+    );
+    if (existingScript) {
+      if ((window as Window & { google?: any }).google) renderGoogleButton();
+      else existingScript.addEventListener("load", renderGoogleButton, { once: true });
+    } else {
+      const script = document.createElement("script");
+      script.src = "https://accounts.google.com/gsi/client";
+      script.async = true;
+      script.defer = true;
+      script.addEventListener("load", renderGoogleButton, { once: true });
+      document.head.appendChild(script);
+    }
+
+    return () => { cancelled = true; };
+  }, [authMode, theme, token]);
 
   const handleForgotPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -6793,12 +6867,67 @@ export default function AdminApp() {
       <div className={`${styles.admin} ${theme === "dark" ? styles["admin--dark"] : ""}`}>
         {sessionExpiredDialog}
         <main className={styles.auth}>
+          {authError && (
+            <div className={styles.authErrorDialog__backdrop} role="presentation">
+              <section
+                className={styles.authErrorDialog}
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="auth-error-title"
+                aria-describedby="auth-error-message"
+              >
+                <span className={styles.authErrorDialog__icon} aria-hidden="true">
+                  <AlertTriangle size={22} />
+                </span>
+                <div>
+                  <h2 id="auth-error-title">We couldn&apos;t continue</h2>
+                  <p id="auth-error-message">{authError}</p>
+                </div>
+                <button type="button" onClick={() => setAuthError("")} autoFocus>
+                  Try again
+                </button>
+              </section>
+            </div>
+          )}
+          <section className={styles.auth__story} aria-label="About Writly">
+            <a href="/" className={styles.auth__storyBrand}>
+              <span className={styles.auth__logoMark}><FileText size={24} /></span>
+              <span>Writly</span>
+            </a>
+            <div className={styles.auth__storyContent}>
+              <span className={styles.auth__eyebrow}>Contracts, without the busywork</span>
+              <h1>From first draft to final signature.</h1>
+              <p>
+                Create polished contracts, collect signatures, and keep every agreement
+                moving from one focused workspace.
+              </p>
+              <div className={styles.auth__proof}>
+                <span><BadgeCheck size={17} /> Secure by design</span>
+                <span><BadgeCheck size={17} /> Built for clear workflows</span>
+              </div>
+            </div>
+            <p className={styles.auth__copyright}>© {new Date().getFullYear()} Writly</p>
+          </section>
           <div className={styles.auth__panel}>
             <div className={styles.auth__brand}>
-              <Shield className={styles.auth__brandIcon} />
               <div>
-                <h1>Writly</h1>
-                <p>Sign in to draft, send, and manage contracts.</p>
+                <span className={styles.auth__eyebrow}>
+                  {authMode === "signup" ? "Create your workspace" : "Welcome back"}
+                </span>
+                <h1>
+                  {authMode === "signup"
+                    ? "Start with Writly"
+                    : authMode === "forgot"
+                      ? "Reset your password"
+                      : authMode === "reset"
+                        ? "Choose a new password"
+                        : "Sign in to Writly"}
+                </h1>
+                <p>
+                  {authMode === "signup"
+                    ? "Create an account to draft, send, and manage contracts."
+                    : "Pick up where you left off."}
+                </p>
               </div>
             </div>
             {(authMode === "login" || authMode === "signup") && (
@@ -6837,8 +6966,25 @@ export default function AdminApp() {
             )}
 
             {(authMode === "login" || authMode === "signup") && (
+              <>
+                {import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ? (
+                  <div
+                    ref={googleButtonRef}
+                    className={`${styles.auth__google} ${isGoogleSubmitting ? styles["auth__google--loading"] : ""}`}
+                    aria-label={`${authMode === "signup" ? "Sign up" : "Sign in"} with Google`}
+                  />
+                ) : (
+                  <p className={styles.auth__googleSetup}>Google sign-in needs configuration.</p>
+                )}
+                <div className={styles.auth__divider}><span>or continue with email</span></div>
+              </>
+            )}
+
+            {(authMode === "login" || authMode === "signup") && (
               <form
-                className={styles.auth__form}
+                className={`${styles.auth__form} ${
+                  authMode === "signup" ? styles["auth__form--signup"] : ""
+                }`}
                 onSubmit={authMode === "login" ? handleLogin : handleSignup}
               >
                 {authMode === "signup" && (
@@ -6914,11 +7060,10 @@ export default function AdminApp() {
                   </label>
                 )}
                 {authNotice && <p className={styles.auth__notice}>{authNotice}</p>}
-                {authError && <p className={styles.auth__error}>{authError}</p>}
                 <button
                   type="submit"
                   className={styles.auth__submit}
-                  disabled={isLoginSubmitting || isSignupSubmitting}
+                  disabled={isLoginSubmitting || isSignupSubmitting || isGoogleSubmitting}
                 >
                   {authMode === "login" && isLoginSubmitting ? (
                     <>
@@ -6931,26 +7076,11 @@ export default function AdminApp() {
                       Creating account...
                     </>
                   ) : authMode === "login" ? (
-                    "Log In"
+                    "Sign in"
                   ) : (
-                    "Create Account"
+                    "Create account"
                   )}
                 </button>
-                {authMode === "login" && (
-                  <button
-                    type="button"
-                    className={styles.auth__linkButton}
-                    disabled={isLoginSubmitting || isSignupSubmitting}
-                    onClick={() => {
-                      setAuthMode("forgot");
-                      setAuthError("");
-                      setAuthNotice("");
-                      setSignupConfirmPassword("");
-                    }}
-                  >
-                    Forgot password?
-                  </button>
-                )}
               </form>
             )}
 
@@ -6970,7 +7100,6 @@ export default function AdminApp() {
                   />
                 </label>
                 {authNotice && <p className={styles.auth__notice}>{authNotice}</p>}
-                {authError && <p className={styles.auth__error}>{authError}</p>}
                 <button type="submit" className={styles.auth__submit}>
                   Send Reset Link
                 </button>
@@ -7037,7 +7166,6 @@ export default function AdminApp() {
                   </div>
                 </label>
                 {authNotice && <p className={styles.auth__notice}>{authNotice}</p>}
-                {authError && <p className={styles.auth__error}>{authError}</p>}
                 <button type="submit" className={styles.auth__submit}>
                   Reset Password
                 </button>
@@ -7057,29 +7185,6 @@ export default function AdminApp() {
               </form>
             )}
 
-            <div className={styles.auth__footer}>
-                <button
-                  type="button"
-                  className={styles.auth__themeToggle}
-                  disabled={isLoginSubmitting || isSignupSubmitting}
-                  onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
-                >
-                  {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-                  <span>Switch to {theme === "dark" ? "light" : "dark"} mode</span>
-                </button>
-              <a
-                href="/"
-                className={`${styles.auth__homeLink} ${
-                  isLoginSubmitting || isSignupSubmitting
-                    ? styles["auth__homeLink--disabled"]
-                    : ""
-                }`}
-                tabIndex={isLoginSubmitting || isSignupSubmitting ? -1 : undefined}
-                aria-disabled={isLoginSubmitting || isSignupSubmitting}
-              >
-                Writly contracts
-              </a>
-            </div>
           </div>
         </main>
       </div>

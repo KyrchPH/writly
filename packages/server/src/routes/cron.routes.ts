@@ -1,6 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from "express";
 import { env } from "../config/env.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 
 export const cronRouter = Router();
@@ -30,7 +30,7 @@ const requireCronSecret = (req: Request, res: Response, next: NextFunction) => {
 };
 
 cronRouter.get(
-  "/supabase-keepalive",
+  ["/mongodb-keepalive", "/database-keepalive"],
   requireCronSecret,
   asyncHandler(async (_req, res) => {
     const startedAt = Date.now();
@@ -39,11 +39,11 @@ cronRouter.get(
     res.setHeader("Cache-Control", "no-store, max-age=0");
 
     try {
-      await prisma.$queryRaw`SELECT 1`;
+      await db.$ping();
     } catch {
       res.status(503).json({
         status: "degraded",
-        check: "supabase-keepalive",
+        check: "mongodb-keepalive",
         database: "down",
         timestamp,
       });
@@ -52,7 +52,7 @@ cronRouter.get(
 
     res.status(200).json({
       status: "ok",
-      check: "supabase-keepalive",
+      check: "mongodb-keepalive",
       database: "up",
       latencyMs: Date.now() - startedAt,
       timestamp,

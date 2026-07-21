@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import {
   normalizeRouteParam,
   optionalTextSchema,
@@ -25,7 +25,7 @@ const servicePatchSchema = serviceCreateSchema
   });
 
 export const listAdminServices: RequestHandler = async (_req, res) => {
-  const services = await prisma.service.findMany({
+  const services = await db.service.findMany({
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
   res.status(200).json({ data: services });
@@ -38,7 +38,7 @@ export const getAdminServiceById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const service = await prisma.service.findUnique({ where: { id } });
+  const service = await db.service.findUnique({ where: { id } });
   if (!service) {
     res.status(404).json({ message: "Service not found." });
     return;
@@ -54,7 +54,7 @@ export const createService: RequestHandler = async (req, res) => {
     return;
   }
 
-  const service = await prisma.service.create({ data: parsed.data });
+  const service = await db.service.create({ data: parsed.data });
   res.status(201).json({ data: service });
 };
 
@@ -71,13 +71,13 @@ export const replaceService: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.service.findUnique({ where: { id } });
+  const existing = await db.service.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Service not found." });
     return;
   }
 
-  const service = await prisma.service.update({
+  const service = await db.service.update({
     where: { id },
     data: parsed.data,
   });
@@ -97,13 +97,13 @@ export const patchService: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.service.findUnique({ where: { id } });
+  const existing = await db.service.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Service not found." });
     return;
   }
 
-  const service = await prisma.service.update({
+  const service = await db.service.update({
     where: { id },
     data: parsed.data,
   });
@@ -117,18 +117,18 @@ export const deleteService: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.service.findUnique({ where: { id } });
+  const existing = await db.service.findUnique({ where: { id } });
   if (!existing) {
     res.status(404).json({ message: "Service not found." });
     return;
   }
 
-  await prisma.service.delete({ where: { id } });
+  await db.service.delete({ where: { id } });
   res.status(204).send();
 };
 
 export const listPublicServices: RequestHandler = async (_req, res) => {
-  const services = await prisma.service.findMany({
+  const services = await db.service.findMany({
     where: { isPublished: true },
     orderBy: [{ sortOrder: "asc" }, { updatedAt: "desc" }],
   });
@@ -142,7 +142,7 @@ export const getPublicServiceById: RequestHandler = async (req, res) => {
     return;
   }
 
-  const service = await prisma.service.findFirst({
+  const service = await db.service.findFirst({
     where: { id, isPublished: true },
   });
   if (!service) {

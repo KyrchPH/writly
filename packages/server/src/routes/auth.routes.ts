@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "crypto";
 import { z } from "zod";
 import { env, isEmailConfigured } from "../config/env.js";
 import { sendPasswordResetEmail } from "../lib/mailer.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
@@ -19,6 +19,17 @@ const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
+
+const googleLoginSchema = z.object({ credential: z.string().min(100) });
+
+type GoogleTokenInfo = {
+  aud?: string;
+  email?: string;
+  email_verified?: string;
+  name?: string;
+  given_name?: string;
+  iss?: string;
+};
 
 const forgotPasswordSchema = z.object({
   email: z.string().email(),
@@ -71,55 +82,35 @@ authRouter.post("/signup", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const existing = await prisma.adminUser.findUnique({ where: { email } });
+  const existing = await db.adminUser.findUnique({ where: { email } });
   if (existing) {
     res.status(409).json({ message: "Email is already in use." });
     return;
   }
 
   const passwordHash = await hashPassword(parsed.data.password);
-  const signupResult = await prisma.$transaction(async (tx) => {
-    const adminCount = await tx.adminUser.count();
-    const shouldAutoApprove = adminCount === 0;
-    const now = new Date();
-
-    const user = await tx.adminUser.create({
-      data: {
-        name: parsed.data.name.trim(),
-        email,
-        passwordHash,
-        isApproved: shouldAutoApprove,
-        approvedAt: shouldAutoApprove ? now : undefined,
-      },
-    });
-
-    return { user, shouldAutoApprove };
+  const now = new Date();
+  const user = await db.adminUser.create({
+    data: {
+      name: parsed.data.name.trim(),
+      email,
+      passwordHash,
+      isApproved: true,
+      approvedAt: now,
+    },
   });
 
-  if (!signupResult.shouldAutoApprove) {
-    res.status(202).json({
-      message: "Signup submitted. Awaiting admin approval.",
-      user: {
-        id: signupResult.user.id,
-        name: signupResult.user.name,
-        email: signupResult.user.email,
-        createdAt: signupResult.user.createdAt,
-      },
-    });
-    return;
-  }
-
   const token = signAccessToken({
-    sub: signupResult.user.id,
-    email: signupResult.user.email,
+    sub: user.id,
+    email: user.email,
   });
   res.status(201).json({
     token,
     user: {
-      id: signupResult.user.id,
-      name: signupResult.user.name,
-      email: signupResult.user.email,
-      createdAt: signupResult.user.createdAt,
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
     },
   });
 }));
@@ -135,7 +126,7 @@ authRouter.post("/login", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const user = await prisma.adminUser.findUnique({ where: { email } });
+  const user = await db.adminUser.findUnique({ where: { email } });
   if (!user) {
     res.status(401).json({ message: "Invalid credentials." });
     return;
@@ -153,7 +144,7 @@ authRouter.post("/login", asyncHandler(async (req, res) => {
   }
 
   const userAgent = req.get("user-agent") || undefined;
-  await prisma.adminLoginLog.create({
+  await db.adminLoginLog.create({
     data: {
       userId: user.id,
       deviceName: getDeviceName(userAgent),
@@ -170,6 +161,71 @@ authRouter.post("/login", asyncHandler(async (req, res) => {
       email: user.email,
       createdAt: user.createdAt,
     },
+  });
+}));
+
+authRouter.post("/google", asyncHandler(async (req, res) => {
+  if (!env.GOOGLE_CLIENT_ID) {
+    res.status(503).json({ message: "Google sign-in is not configured yet." });
+    return;
+  }
+
+  const parsed = googleLoginSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ message: "Invalid Google sign-in response." });
+    return;
+  }
+
+  const verificationResponse = await fetch(
+    `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(parsed.data.credential)}`,
+  );
+  if (!verificationResponse.ok) {
+    res.status(401).json({ message: "Google could not verify this sign-in." });
+    return;
+  }
+
+  const profile = await verificationResponse.json() as GoogleTokenInfo;
+  const validIssuer = profile.iss === "accounts.google.com" || profile.iss === "https://accounts.google.com";
+  if (
+    profile.aud !== env.GOOGLE_CLIENT_ID ||
+    profile.email_verified !== "true" ||
+    !profile.email ||
+    !validIssuer
+  ) {
+    res.status(401).json({ message: "Google returned an invalid account identity." });
+    return;
+  }
+
+  const email = normalizeEmail(profile.email);
+  let user = await db.adminUser.findUnique({ where: { email } });
+
+  if (!user) {
+    const passwordHash = await hashPassword(randomBytes(32).toString("hex"));
+    user = await db.adminUser.create({
+      data: {
+        name: (profile.name || profile.given_name || email.split("@")[0]).trim(),
+        email,
+        passwordHash,
+        isApproved: true,
+        approvedAt: new Date(),
+      },
+    });
+  }
+
+  if (!user.isApproved) {
+    res.status(403).json({ message: "Account pending admin approval." });
+    return;
+  }
+
+  const userAgent = req.get("user-agent") || undefined;
+  await db.adminLoginLog.create({
+    data: { userId: user.id, deviceName: getDeviceName(userAgent), userAgent },
+  });
+
+  const token = signAccessToken({ sub: user.id, email: user.email });
+  res.status(200).json({
+    token,
+    user: { id: user.id, name: user.name, email: user.email, createdAt: user.createdAt },
   });
 }));
 
@@ -191,7 +247,7 @@ authRouter.post("/forgot-password", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const user = await prisma.adminUser.findUnique({ where: { email } });
+  const user = await db.adminUser.findUnique({ where: { email } });
 
   // Return a generic response to avoid account enumeration.
   const genericSuccess = {
@@ -211,12 +267,12 @@ authRouter.post("/forgot-password", asyncHandler(async (req, res) => {
     now.getTime() + env.PASSWORD_RESET_TOKEN_TTL_MINUTES * 60 * 1000,
   );
 
-  await prisma.passwordResetToken.updateMany({
+  await db.passwordResetToken.updateMany({
     where: { userId: user.id, usedAt: null },
     data: { usedAt: now },
   });
 
-  await prisma.passwordResetToken.create({
+  await db.passwordResetToken.create({
     data: {
       userId: user.id,
       tokenHash,
@@ -234,7 +290,7 @@ authRouter.post("/forgot-password", asyncHandler(async (req, res) => {
       expiresInMinutes: env.PASSWORD_RESET_TOKEN_TTL_MINUTES,
     });
   } catch (error) {
-    await prisma.passwordResetToken.updateMany({
+    await db.passwordResetToken.updateMany({
       where: { userId: user.id, tokenHash },
       data: { usedAt: new Date() },
     });
@@ -260,7 +316,7 @@ authRouter.post("/reset-password", asyncHandler(async (req, res) => {
 
   const now = new Date();
   const tokenHash = hashResetToken(parsed.data.token.trim());
-  const resetRecord = await prisma.passwordResetToken.findUnique({
+  const resetRecord = await db.passwordResetToken.findUnique({
     where: { tokenHash },
   });
 
@@ -275,16 +331,16 @@ authRouter.post("/reset-password", asyncHandler(async (req, res) => {
 
   const newPasswordHash = await hashPassword(parsed.data.newPassword);
 
-  await prisma.$transaction([
-    prisma.adminUser.update({
+  await db.$transaction([
+    db.adminUser.update({
       where: { id: resetRecord.userId },
       data: { passwordHash: newPasswordHash },
     }),
-    prisma.passwordResetToken.update({
+    db.passwordResetToken.update({
       where: { id: resetRecord.id },
       data: { usedAt: now },
     }),
-    prisma.passwordResetToken.updateMany({
+    db.passwordResetToken.updateMany({
       where: { userId: resetRecord.userId, usedAt: null },
       data: { usedAt: now },
     }),
@@ -300,7 +356,7 @@ authRouter.get("/me", requireAuth, asyncHandler(async (req, res) => {
     return;
   }
 
-  const user = await prisma.adminUser.findUnique({
+  const user = await db.adminUser.findUnique({
     where: { id: userId },
     select: {
       id: true,

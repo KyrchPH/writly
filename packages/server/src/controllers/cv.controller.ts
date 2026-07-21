@@ -4,7 +4,7 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { getFirebaseStorageBucket } from "../lib/firebase-storage.js";
 import { sendCvOtpEmail } from "../lib/mailer.js";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { signCvDownloadToken, verifyCvDownloadToken } from "../utils/jwt.js";
 import { sendValidationError } from "./helpers.js";
 
@@ -177,7 +177,7 @@ const getCvDocument = (
       };
 
 export const getAdminCvAsset: RequestHandler = async (_req, res) => {
-  const cvAssets = await prisma.cvAsset.findMany({
+  const cvAssets = await db.cvAsset.findMany({
     orderBy: [{ isActive: "desc" }, { updatedAt: "desc" }],
     include: {
       _count: {
@@ -197,14 +197,14 @@ export const getAdminCvAsset: RequestHandler = async (_req, res) => {
       },
     },
   });
-  const formattedCvAssets = cvAssets.map(({ _count, downloads, ...asset }) => ({
+  const formattedCvAssets = cvAssets.map(({ _count, downloads, ...asset }: any) => ({
     ...asset,
     downloadCount: _count.downloads,
     downloads,
   }));
   res.status(200).json({
     data: formattedCvAssets,
-    active: formattedCvAssets.find((asset) => asset.isActive) ?? null,
+    active: formattedCvAssets.find((asset: any) => asset.isActive) ?? null,
   });
 };
 
@@ -215,14 +215,14 @@ export const createAdminCvAsset: RequestHandler = async (req, res) => {
     return;
   }
 
-  const hasActiveCv = await prisma.cvAsset.findFirst({
+  const hasActiveCv = await db.cvAsset.findFirst({
     where: { isActive: true },
     select: { id: true },
   });
   const shouldActivate = parsed.data.isActive ?? !hasActiveCv;
   const statusUpdatedAt = new Date();
 
-  const saved = await prisma.$transaction(async (tx) => {
+  const saved = await db.$transaction(async (tx: any) => {
     if (shouldActivate) {
       await tx.cvAsset.updateMany({
         where: { isActive: true },
@@ -260,7 +260,7 @@ export const setActiveAdminCvAsset: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.cvAsset.findUnique({
+  const existing = await db.cvAsset.findUnique({
     where: { id: parsed.data.id },
   });
   if (!existing) {
@@ -269,7 +269,7 @@ export const setActiveAdminCvAsset: RequestHandler = async (req, res) => {
   }
 
   const statusUpdatedAt = new Date();
-  const saved = await prisma.$transaction(async (tx) => {
+  const saved = await db.$transaction(async (tx: any) => {
     await tx.cvAsset.updateMany({
       where: { isActive: true },
       data: { isActive: false, statusUpdatedAt },
@@ -290,7 +290,7 @@ export const deleteAdminCvAsset: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await prisma.cvAsset.findUnique({
+  const existing = await db.cvAsset.findUnique({
     where: { id: parsed.data.id },
   });
   if (!existing) {
@@ -298,7 +298,7 @@ export const deleteAdminCvAsset: RequestHandler = async (req, res) => {
     return;
   }
 
-  await prisma.cvAsset.delete({ where: { id: existing.id } });
+  await db.cvAsset.delete({ where: { id: existing.id } });
   try {
     const bucket = getFirebaseStorageBucket();
     const paths = new Set([
@@ -316,11 +316,11 @@ export const deleteAdminCvAsset: RequestHandler = async (req, res) => {
   }
 
   if (existing.isActive) {
-    const nextAsset = await prisma.cvAsset.findFirst({
+    const nextAsset = await db.cvAsset.findFirst({
       orderBy: { updatedAt: "desc" },
     });
     if (nextAsset) {
-      await prisma.cvAsset.update({
+      await db.cvAsset.update({
         where: { id: nextAsset.id },
         data: { isActive: true, statusUpdatedAt: new Date() },
       });
@@ -341,7 +341,7 @@ export const requestCvOtp: RequestHandler = async (req, res) => {
   const documentType = parsed.data.documentType;
   const now = new Date();
 
-  const cvAsset = await prisma.cvAsset.findFirst({
+  const cvAsset = await db.cvAsset.findFirst({
     where: { isActive: true },
   });
   if (!cvAsset) {
@@ -354,7 +354,7 @@ export const requestCvOtp: RequestHandler = async (req, res) => {
     return;
   }
 
-  const latestPending = await prisma.cvOtp.findFirst({
+  const latestPending = await db.cvOtp.findFirst({
     where: { email, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
@@ -380,7 +380,7 @@ export const requestCvOtp: RequestHandler = async (req, res) => {
     now.getTime() + env.CV_OTP_EXPIRY_MINUTES * 60 * 1000,
   );
 
-  const record = await prisma.cvOtp.create({
+  const record = await db.cvOtp.create({
     data: {
       email,
       otpHash,
@@ -395,7 +395,7 @@ export const requestCvOtp: RequestHandler = async (req, res) => {
       expiresInMinutes: env.CV_OTP_EXPIRY_MINUTES,
     });
   } catch (error) {
-    await prisma.cvOtp.delete({ where: { id: record.id } }).catch(() => undefined);
+    await db.cvOtp.delete({ where: { id: record.id } }).catch(() => undefined);
     const message =
       error instanceof Error ? error.message : "Failed to send OTP email.";
     res.status(500).json({ message });
@@ -424,7 +424,7 @@ export const verifyCvOtp: RequestHandler = async (req, res) => {
   const otpInput = parsed.data.otp.trim().toUpperCase();
   const now = new Date();
 
-  const latestPending = await prisma.cvOtp.findFirst({
+  const latestPending = await db.cvOtp.findFirst({
     where: { email, consumedAt: null },
     orderBy: { createdAt: "desc" },
   });
@@ -435,7 +435,7 @@ export const verifyCvOtp: RequestHandler = async (req, res) => {
   }
 
   if (latestPending.expiresAt.getTime() < now.getTime()) {
-    await prisma.cvOtp.update({
+    await db.cvOtp.update({
       where: { id: latestPending.id },
       data: { consumedAt: now },
     });
@@ -444,7 +444,7 @@ export const verifyCvOtp: RequestHandler = async (req, res) => {
   }
 
   if (latestPending.attempts >= 5) {
-    await prisma.cvOtp.update({
+    await db.cvOtp.update({
       where: { id: latestPending.id },
       data: { consumedAt: now },
     });
@@ -456,7 +456,7 @@ export const verifyCvOtp: RequestHandler = async (req, res) => {
   const matched = compareOtpHash(expectedHash, latestPending.otpHash);
   if (!matched) {
     const nextAttempts = latestPending.attempts + 1;
-    await prisma.cvOtp.update({
+    await db.cvOtp.update({
       where: { id: latestPending.id },
       data: {
         attempts: nextAttempts,
@@ -467,12 +467,12 @@ export const verifyCvOtp: RequestHandler = async (req, res) => {
     return;
   }
 
-  await prisma.cvOtp.update({
+  await db.cvOtp.update({
     where: { id: latestPending.id },
     data: { consumedAt: now },
   });
 
-  const cvAsset = await prisma.cvAsset.findFirst({
+  const cvAsset = await db.cvAsset.findFirst({
     where: { isActive: true },
   });
   if (!cvAsset) {
@@ -527,7 +527,7 @@ export const downloadCvByToken: RequestHandler = async (req, res) => {
     return;
   }
 
-  const cvAsset = await prisma.cvAsset.findFirst({
+  const cvAsset = await db.cvAsset.findFirst({
     where: { isActive: true },
   });
   if (!cvAsset) {
@@ -559,7 +559,7 @@ export const downloadCvByToken: RequestHandler = async (req, res) => {
       res.setHeader("Content-Length", metadata.size);
     }
 
-    await prisma.cvDownload
+    await db.cvDownload
       .create({
         data: {
           cvAssetId: cvAsset.id,

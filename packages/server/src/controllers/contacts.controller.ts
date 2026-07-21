@@ -1,6 +1,6 @@
 import type { RequestHandler } from "express";
 import { z } from "zod";
-import { prisma } from "../lib/prisma.js";
+import { db } from "../lib/db.js";
 import { optionalTextSchema, optionalUrlSchema, sendValidationError } from "./helpers.js";
 
 const CONTACT_CONFIG_ID = "primary";
@@ -26,7 +26,7 @@ const contactConfigUpsertSchema = z.object({
 });
 
 export const getAdminContactConfig: RequestHandler = async (_req, res) => {
-  const config = await prisma.contactConfig.findUnique({
+  const config = await db.contactConfig.findUnique({
     where: { id: CONTACT_CONFIG_ID },
   });
   res.status(200).json({ data: config });
@@ -39,7 +39,7 @@ export const upsertAdminContactConfig: RequestHandler = async (req, res) => {
     return;
   }
 
-  const config = await prisma.contactConfig.upsert({
+  const config = await db.contactConfig.upsert({
     where: { id: CONTACT_CONFIG_ID },
     create: {
       id: CONTACT_CONFIG_ID,
@@ -52,7 +52,7 @@ export const upsertAdminContactConfig: RequestHandler = async (req, res) => {
 };
 
 export const getPublicContactConfig: RequestHandler = async (_req, res) => {
-  const config = await prisma.contactConfig.findUnique({
+  const config = await db.contactConfig.findUnique({
     where: { id: CONTACT_CONFIG_ID },
   });
   if (!config) {
