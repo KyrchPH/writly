@@ -361,7 +361,7 @@ const renderContractEmailHtml = (params: {
   <div style="margin:0;padding:40px 20px;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#374151;">
     <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:18px;padding:32px;border:1px solid #e5eaf2;">
       <h1 style="margin:0 0 16px;color:#111827;font-size:26px;line-height:1.2;">
-        Contract Ready for Review
+        Document Ready for Review
       </h1>
 
       <p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">
@@ -369,11 +369,11 @@ const renderContractEmailHtml = (params: {
       </p>
 
       <p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 24px;">
-        Your contract, <strong>${contractTitle}</strong>, is ready. Open the secure link below to review it.
+        Your document, <strong>${contractTitle}</strong>, is ready. Open the secure link below to review it.
       </p>
 
       <a href="${contractUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">
-        Open Contract
+        Open Document
       </a>
 
       <p style="color:#9ca3af;font-size:12px;line-height:1.5;margin:24px 0 0;">
@@ -391,11 +391,11 @@ export const sendContractEmail = async (params: {
   contractTitle: string;
   contractUrl: string;
 }) => {
-  const subject = `Contract: ${params.contractTitle}`;
+  const subject = `Document: ${params.contractTitle}`;
   const text = [
     `Hi ${params.recipientName},`,
     "",
-    `Your contract, "${params.contractTitle}", is ready for review:`,
+    `Your document, "${params.contractTitle}", is ready for review:`,
     params.contractUrl,
   ].join("\n");
 

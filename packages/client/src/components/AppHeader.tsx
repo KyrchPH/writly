@@ -20,7 +20,7 @@ import {
   FileText,
   Sparkles,
 } from "lucide-react";
-import logo from "/logo.svg";
+import logo from "/writly-logo.svg";
 import styles from "./AppHeader.module.css";
 import qrCodeImage from "@/assets/qrcodes/qrcode.png";
 import type { SolutionInquiryType } from "./SolutionInquiryDialog";
@@ -546,9 +546,8 @@ export function AppHeader({
           >
             <img
               src={logo}
-              alt="ace logo"
+              alt="Writly logo"
               className={styles["app-header__logo"]}
-              style={{ filter: theme === "dark" ? "invert(1)" : "none" }}
             />
           </button>
 

@@ -1,4 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
+} from "react";
+import { createPortal } from "react-dom";
+import {
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+  updateProfile,
+} from "firebase/auth";
 import {
   AlertTriangle,
   BadgeCheck,
@@ -64,11 +82,13 @@ import {
 import instagramLogo from "../assets/icons/instagram.png";
 import telegramLogo from "../assets/icons/telegram.png";
 import whatsappLogo from "../assets/icons/whatsapp.png";
+import writlyLoginLogo from "/writly-logo-white.svg";
 import {
   ContractPdfViewer,
   type ContractPdfField,
 } from "../components/ContractPdfViewer";
 import { PDFDocument, rgb, type PDFPage, type RGB } from "pdf-lib";
+import { firebaseAuth, isFirebaseAuthConfigured } from "../lib/firebase";
 import styles from "./AdminApp.module.css";
 
 type AuthMode = "login" | "signup" | "forgot" | "reset";
@@ -241,6 +261,7 @@ type AdminContractTemplate = {
   contractCount: number;
   createdAt: string;
   updatedAt: string;
+  isFinalized: boolean;
 };
 
 type AdminContractPdfDocument = {
@@ -280,7 +301,7 @@ type AdminContractEmailResponse = {
   };
 };
 
-type PendingAdminAccount = {
+type PendingUserAccount = {
   id: string;
   name: string;
   email: string;
@@ -478,7 +499,7 @@ type AdminContractsApiResponse = {
   contracts: AdminContractApi[];
 };
 
-type PendingAdminApi = {
+type PendingUserApi = {
   id: string;
   name: string;
   email: string;
@@ -495,7 +516,7 @@ type AdminDataResponses = {
   reviewsResponse: ApiListResponse<AdminReviewApi>;
   clientsResponse: ApiListResponse<AdminClientApi>;
   contractsResponse: AdminContractsApiResponse;
-  pendingUsersResponse: ApiListResponse<PendingAdminApi>;
+  pendingUsersResponse: ApiListResponse<PendingUserApi>;
   contactsResponse: { data: AdminContactConfig | null };
   cvResponse: { data: AdminCvAsset[]; active: AdminCvAsset | null };
   analyticsResponse: {
@@ -629,7 +650,7 @@ const defaultErrorLogStats: AdminErrorLogStats = {
 };
 
 const navItems: Array<{ id: SectionId; label: string; icon: typeof LayoutDashboard }> = [
-  { id: "contracts", label: "Contracts", icon: FileText },
+  { id: "contracts", label: "Documents", icon: FileText },
 ];
 
 const cvSortOptions: Array<{ value: CvSortMode; label: string }> = [
@@ -899,9 +920,9 @@ const readStoredContractDraft = async () => {
       };
       transaction.oncomplete = () => resolve(result);
       request.onerror = () =>
-        reject(request.error ?? new Error("Failed to read stored contract draft."));
+        reject(request.error ?? new Error("Failed to read stored document draft."));
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error("Failed to read stored contract draft."));
+        reject(transaction.error ?? new Error("Failed to read stored document draft."));
     });
   } finally {
     database.close();
@@ -928,9 +949,9 @@ const writeStoredContractDraft = async (
 
       transaction.oncomplete = () => resolve();
       request.onerror = () =>
-        reject(request.error ?? new Error("Failed to store contract draft."));
+        reject(request.error ?? new Error("Failed to store document draft."));
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error("Failed to store contract draft."));
+        reject(transaction.error ?? new Error("Failed to store document draft."));
     });
   } finally {
     database.close();
@@ -946,9 +967,9 @@ const deleteStoredContractDraft = async () => {
 
       transaction.oncomplete = () => resolve();
       request.onerror = () =>
-        reject(request.error ?? new Error("Failed to clear contract draft."));
+        reject(request.error ?? new Error("Failed to clear document draft."));
       transaction.onerror = () =>
-        reject(transaction.error ?? new Error("Failed to clear contract draft."));
+        reject(transaction.error ?? new Error("Failed to clear document draft."));
     });
   } finally {
     database.close();
@@ -967,6 +988,12 @@ const resolveStoredContractDraftFile = (draft: StoredContractDraftRecord) => {
 
 const isSectionId = (value: string | null): value is SectionId =>
   Boolean(value && navItems.some((item) => item.id === value));
+
+const isContractDraftRoute = (pathname: string) =>
+  pathname === "/" ||
+  pathname === "/admin" ||
+  pathname === "/admin/" ||
+  pathname.startsWith("/admin/contracts/draft");
 
 const readStoredActiveSection = (): SectionId => {
   try {
@@ -1155,6 +1182,15 @@ const getContractFieldTypeLabel = (field: Pick<ContractPdfField, "type">) => {
   if (field.type === "signature") return "Signature";
   if (field.type === "textbox") return "Textbox";
   return "Text";
+};
+const getContractFieldAccentColor = (field: ContractPdfField) => {
+  const typeLabel = getContractFieldTypeLabel(field);
+  if (typeLabel === "Eraser") return "rgba(71, 85, 105, 0.9)";
+  if (field.type === "draw") return "rgba(249, 115, 22, 0.92)";
+  if (field.type === "image") return "rgba(14, 165, 233, 0.9)";
+  if (field.type === "signature") return "rgba(168, 85, 247, 0.9)";
+  if (field.type === "textbox") return "rgba(20, 184, 166, 0.9)";
+  return "rgba(37, 99, 235, 0.86)";
 };
 const getContractFieldDefaultLabel = (type: ContractPdfField["type"]) => {
   if (type === "draw") return "Drawing";
@@ -2357,6 +2393,7 @@ const mapContractTemplate = (template: AdminContractTemplateApi): AdminContractT
   contractCount: typeof template.contractCount === "number" ? template.contractCount : 0,
   createdAt: template.createdAt,
   updatedAt: template.updatedAt,
+  isFinalized: template.isFinalized === true,
 });
 
 const mapContract = (contract: AdminContractApi): AdminContract => ({
@@ -2573,8 +2610,49 @@ async function parseErrorMessage(response: Response, fallback: string) {
   }
 }
 
+const getFirebaseAuthErrorMessage = (error: unknown, fallback: string) => {
+  const code = typeof error === "object" && error && "code" in error
+    ? String((error as { code?: unknown }).code)
+    : "";
+
+  const messages: Record<string, string> = {
+    "auth/account-exists-with-different-credential":
+      "An account already exists with this email. Sign in with your existing method first.",
+    "auth/email-already-in-use": "Email is already in use. Try logging in instead.",
+    "auth/invalid-credential": "Invalid email or password.",
+    "auth/popup-closed-by-user": "Google sign-in was cancelled.",
+    "auth/too-many-requests": "Too many attempts. Please try again later.",
+    "auth/user-not-found": "Invalid email or password.",
+    "auth/wrong-password": "Invalid email or password.",
+  };
+
+  return messages[code] ?? (error instanceof Error ? error.message : fallback);
+};
+
+const GoogleLogo = () => (
+  <svg className={styles.auth__googleLogo} viewBox="0 0 24 24" aria-hidden="true">
+    <path
+      fill="#4285F4"
+      d="M22.6 12.2c0-.7-.1-1.4-.2-2H12v3.9h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.4-4.7 3.4-7.9z"
+    />
+    <path
+      fill="#34A853"
+      d="M12 23c3 0 5.5-1 7.3-2.8l-3.5-2.7c-1 .6-2.2 1-3.7 1a6.5 6.5 0 0 1-6.1-4.5H2.3v2.8A11 11 0 0 0 12 23z"
+    />
+    <path
+      fill="#FBBC05"
+      d="M5.9 14a6.6 6.6 0 0 1 0-4.1V7.1H2.3a11 11 0 0 0 0 9.8L6 14z"
+    />
+    <path
+      fill="#EA4335"
+      d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A10.5 10.5 0 0 0 12 1 11 11 0 0 0 2.3 7.1L6 9.9A6.5 6.5 0 0 1 12 5.4z"
+    />
+  </svg>
+);
+
 export default function AdminApp() {
   const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [isContractEditorDark, setIsContractEditorDark] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const [token, setToken] = useState<string | null>(null);
@@ -2582,12 +2660,15 @@ export default function AdminApp() {
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authError, setAuthError] = useState("");
   const [authNotice, setAuthNotice] = useState("");
+  const [isSessionChecking, setIsSessionChecking] = useState(true);
   const [isSessionExpiredDialogOpen, setIsSessionExpiredDialogOpen] = useState(false);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState(
+    "Your session is no longer valid. Please sign in again to continue.",
+  );
   const [resetToken, setResetToken] = useState("");
   const [isLoginSubmitting, setIsLoginSubmitting] = useState(false);
   const [isSignupSubmitting, setIsSignupSubmitting] = useState(false);
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
-  const googleButtonRef = useRef<HTMLDivElement>(null);
 
   const [isLoadingData, setIsLoadingData] = useState(false);
   const [adminError, setAdminError] = useState<AdminScopedError | null>(null);
@@ -2751,6 +2832,10 @@ export default function AdminApp() {
   const [contractTemplatePdfPreviewUrl, setContractTemplatePdfPreviewUrl] = useState("");
   const [contractTemplatePageCount, setContractTemplatePageCount] = useState(1);
   const [contractTemplateActivePage, setContractTemplateActivePage] = useState(1);
+  const [contractPdfPageRequest, setContractPdfPageRequest] = useState<{
+    page: number;
+    requestId: number;
+  } | null>(null);
   const [showContractObjectBorders, setShowContractObjectBorders] = useState(true);
   const [contractPdfZoom, setContractPdfZoom] = useState(100);
   const [contractPdfFitZoom, setContractPdfFitZoom] = useState(100);
@@ -2793,6 +2878,9 @@ export default function AdminApp() {
     defaultContractDrawStrokeWidth,
   );
   const [contractTemplateSaving, setContractTemplateSaving] = useState(false);
+  const [isContractFinalizing, setIsContractFinalizing] = useState(false);
+  const [isSigningInvitationsSubmitting, setIsSigningInvitationsSubmitting] =
+    useState(false);
   const [contractTemplateDeletingId, setContractTemplateDeletingId] = useState<string | null>(null);
   const [contractSelectedTemplateId, setContractSelectedTemplateId] = useState("");
   const [contractTitle, setContractTitle] = useState("");
@@ -2806,10 +2894,23 @@ export default function AdminApp() {
   const [contractPdfExporting, setContractPdfExporting] =
     useState<ContractPdfExportMode | null>(null);
   const [isContractDraftOpen, setIsContractDraftOpen] = useState(() =>
-    window.location.pathname.startsWith("/admin/contracts/draft"),
+    isContractDraftRoute(window.location.pathname),
   );
   const [contractDraftStorageReady, setContractDraftStorageReady] = useState(false);
-  const [isContractSendDropdownOpen, setIsContractSendDropdownOpen] = useState(false);
+  const [isContractDraftDirty, setIsContractDraftDirty] = useState(false);
+  const [isContractExitConfirmOpen, setIsContractExitConfirmOpen] = useState(false);
+  const [isDocumentChooserOpen, setIsDocumentChooserOpen] = useState(false);
+  const [completedContractTemplateId, setCompletedContractTemplateId] = useState<string | null>(
+    null,
+  );
+  const [isSigningFlowOpen, setIsSigningFlowOpen] = useState(false);
+  const [signingFlowStep, setSigningFlowStep] = useState<"choice" | "invite" | "tracking">(
+    "choice",
+  );
+  const [signerEmailDraft, setSignerEmailDraft] = useState("");
+  const [signerEmails, setSignerEmails] = useState<string[]>([]);
+  const [signerEmailError, setSignerEmailError] = useState("");
+  const newDocumentInputRef = useRef<HTMLInputElement | null>(null);
   const [contractsNotice, setContractsNotice] = useState("");
   const [reviewSearch, setReviewSearch] = useState("");
   const [reviewStatusFilter, setReviewStatusFilter] = useState<"All" | ReviewStatus>("All");
@@ -2822,7 +2923,7 @@ export default function AdminApp() {
   const [reviewSavingId, setReviewSavingId] = useState<string | null>(null);
   const [reviewApprovingId, setReviewApprovingId] = useState<string | null>(null);
   const [reviewDeletingId, setReviewDeletingId] = useState<string | null>(null);
-  const [pendingAdmins, setPendingAdmins] = useState<PendingAdminAccount[]>([]);
+  const [pendingUsers, setPendingUsers] = useState<PendingUserAccount[]>([]);
   const [requestProcessingId, setRequestProcessingId] = useState<string | null>(null);
   const [requestsNotice, setRequestsNotice] = useState("");
   const [contactConfig, setContactConfig] = useState<AdminContactConfig | null>(null);
@@ -2902,16 +3003,16 @@ export default function AdminApp() {
       return matchesStatus && matchesCategory && matchesKeyword;
     });
   }, [content.projects, projectCategoryFilter, projectSearch, projectStatusFilter]);
-  const visiblePendingAdmins = useMemo(
+  const visiblePendingUsers = useMemo(
     () =>
-      pendingAdmins.filter((request) =>
+      pendingUsers.filter((request) =>
         matchesSearch(requestSearch, [
           request.name,
           request.email,
           new Date(request.createdAt).toLocaleString(),
         ]),
       ),
-    [pendingAdmins, requestSearch],
+    [pendingUsers, requestSearch],
   );
   const visibleServices = useMemo(
     () =>
@@ -2987,6 +3088,10 @@ export default function AdminApp() {
   const selectedContractField = useMemo(
     () =>
       contractTemplateFields.find((field) => field.id === selectedContractFieldId) ?? null,
+    [contractTemplateFields, selectedContractFieldId],
+  );
+  const selectedContractFieldIndex = useMemo(
+    () => contractTemplateFields.findIndex((field) => field.id === selectedContractFieldId),
     [contractTemplateFields, selectedContractFieldId],
   );
   useEffect(() => {
@@ -3161,12 +3266,7 @@ export default function AdminApp() {
   const contractDraftPdfUrl =
     contractTemplatePdfPreviewUrl || contractTemplateExistingPdf?.fileUrl || "";
   const contractDraftPdfLabel =
-    contractTemplatePdfFile?.name || contractTemplateExistingPdf?.fileName || "Draft a new contract";
-  const isContractDraftSaved = Boolean(contractSelectedTemplateId);
-  const contractDraftCreatedContract = useMemo(
-    () => contracts.find((contract) => contract.id === contractDraftCreatedId) ?? null,
-    [contractDraftCreatedId, contracts],
-  );
+    contractTemplatePdfFile?.name || contractTemplateExistingPdf?.fileName || "Draft a new document";
   const visibleReviews = useMemo(
     () =>
       content.reviews.filter((review) => {
@@ -3199,11 +3299,11 @@ export default function AdminApp() {
   );
   const sidebarBadgeCounts = useMemo<Partial<Record<SectionId, number>>>(
     () => ({
-      requests: pendingAdmins.length,
+      requests: pendingUsers.length,
       reviews: content.reviews.filter((review) => review.status === "Pending").length,
       errorLogs: errorLogStats.openErrors,
     }),
-    [content.reviews, errorLogStats.openErrors, pendingAdmins.length],
+    [content.reviews, errorLogStats.openErrors, pendingUsers.length],
   );
   const activeCvAsset = useMemo(
     () => cvAssets.find((asset) => asset.isActive) ?? null,
@@ -3277,16 +3377,16 @@ export default function AdminApp() {
 
     if (activeSection === "contracts") {
       if (contractTemplateSaving) {
-        return { title: "Saving template", message: "Creating the contract template." };
+        return { title: "Saving template", message: "Creating the document template." };
       }
       if (contractCreating) {
-        return { title: "Creating contract", message: "Generating the shareable link." };
+        return { title: "Creating document", message: "Generating the shareable link." };
       }
       if (contractSendingId) {
-        return { title: "Sending contract", message: "Delivering the contract email." };
+        return { title: "Sending document", message: "Delivering the document email." };
       }
       if (contractDeletingId || contractTemplateDeletingId) {
-        return { title: "Deleting contract item", message: "Removing the selected record." };
+        return { title: "Deleting document item", message: "Removing the selected record." };
       }
     }
 
@@ -3411,7 +3511,11 @@ export default function AdminApp() {
   const isAuthExpiredError = (error: unknown): error is ApiRequestError =>
     error instanceof Error && (error as ApiRequestError).authExpired === true;
 
-  const openSessionExpiredDialog = () => {
+  const openSessionExpiredDialog = (message?: string) => {
+    setSessionExpiredMessage(
+      message || "Your session is no longer valid. Please sign in again to continue.",
+    );
+    setIsSessionChecking(false);
     setIsSessionExpiredDialogOpen(true);
     setIsLoadingData(false);
     clearAdminError();
@@ -3447,15 +3551,25 @@ export default function AdminApp() {
   };
 
   const renderScopedError = (scope: SectionId) =>
-    adminError?.scope === scope ? (
-      <div className={styles.adminSectionMessageOverlay}>
-        <AdminErrorPopup
-          error={adminError}
-          placement="section"
-          onClose={() => clearAdminError(scope)}
-        />
-      </div>
-    ) : null;
+    adminError?.scope === scope
+      ? createPortal(
+          <div className={styles.adminErrorOverlay}>
+            <AdminErrorPopup
+              error={adminError}
+              placement="global"
+              onClose={() => clearAdminError(scope)}
+            />
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const getFreshAuthToken = async (fallbackToken?: string) => {
+    if (firebaseAuth?.currentUser) {
+      return firebaseAuth.currentUser.getIdToken();
+    }
+    return fallbackToken;
+  };
 
   const requestJson = async <T,>(
     path: string,
@@ -3466,8 +3580,9 @@ export default function AdminApp() {
     if (!headers.has("Content-Type") && init.body) {
       headers.set("Content-Type", "application/json");
     }
-    if (bearerToken) {
-      headers.set("Authorization", `Bearer ${bearerToken}`);
+    const authToken = await getFreshAuthToken(bearerToken);
+    if (authToken) {
+      headers.set("Authorization", `Bearer ${authToken}`);
     }
 
     const response = await fetch(`${API_BASE}${path}`, {
@@ -3479,7 +3594,7 @@ export default function AdminApp() {
       const message = await parseErrorMessage(response, "Request failed.");
       const requestError = new Error(message) as ApiRequestError;
       requestError.status = response.status;
-      requestError.authExpired = Boolean(bearerToken && response.status === 401);
+      requestError.authExpired = Boolean(authToken && response.status === 401);
       throw requestError;
     }
 
@@ -3497,7 +3612,8 @@ export default function AdminApp() {
     cachedEtag?: string,
   ): Promise<CachedJsonResult<T>> => {
     const headers = new Headers();
-    headers.set("Authorization", `Bearer ${bearerToken}`);
+    const authToken = await getFreshAuthToken(bearerToken);
+    headers.set("Authorization", `Bearer ${authToken ?? bearerToken}`);
     if (cachedEtag) {
       headers.set("If-None-Match", cachedEtag);
     }
@@ -3545,39 +3661,25 @@ export default function AdminApp() {
       throw new Error("Missing admin session.");
     }
 
-    const signResponse = await requestJson<{
+    const uploadResponse = await requestJson<{
       data: {
         filePath: string;
         proxyPath: string;
         proxyUrl: string;
-        uploadUrl: string;
-        headers: {
-          "Content-Type": string;
-        };
       };
     }>(
-      "/admin/uploads/sign",
+      `/admin/uploads/file?filename=${encodeURIComponent(file.name)}&folder=${encodeURIComponent(folder)}`,
       {
         method: "POST",
-        body: JSON.stringify({
-          filename: file.name,
-          contentType,
-          folder,
-        }),
+        headers: {
+          "Content-Type": contentType,
+        },
+        body: file,
       },
       token,
     );
 
-    const uploadResult = await fetch(signResponse.data.uploadUrl, {
-      method: "PUT",
-      headers: signResponse.data.headers,
-      body: file,
-    });
-    if (!uploadResult.ok) {
-      throw new Error(`Failed to upload ${file.name} to Firebase Storage.`);
-    }
-
-    return signResponse.data;
+    return uploadResponse.data;
   };
 
   const uploadAdminImage = async (
@@ -3656,7 +3758,7 @@ export default function AdminApp() {
     setClients(clientsResponse.data.map(mapClient));
     setContractTemplates(contractsResponse.templates.map(mapContractTemplate));
     setContracts(contractsResponse.contracts.map(mapContract));
-    setPendingAdmins(pendingUsersResponse.data);
+    setPendingUsers(pendingUsersResponse.data);
     setContactConfig(contactsResponse.data);
     setContactEmail(contactsResponse.data?.email ?? "");
     setContactPhone(contactsResponse.data?.phone ?? "");
@@ -3725,9 +3827,7 @@ export default function AdminApp() {
     setContractSearch("");
     setContractDraftCreatedId(null);
     setIsContractDraftOpen(false);
-    setContractDraftActiveTab("info");
-    setIsContractSendDropdownOpen(false);
-    setPendingAdmins([]);
+    setPendingUsers([]);
     setRequestProcessingId(null);
     setRequestsNotice("");
     setContactConfig(null);
@@ -3803,7 +3903,7 @@ export default function AdminApp() {
     setContractRecipientName(draft.recipientName);
     setContractRecipientEmail(draft.recipientEmail);
     setContractDraftCreatedId(draft.createdContractId);
-    setIsContractSendDropdownOpen(false);
+    setIsContractDraftDirty(true);
 
     if (!restoredPdfFile && !draft.existingPdf && (draft.pdfFileMeta || draft.fields.length > 0)) {
       setContractsNotice(
@@ -3812,7 +3912,7 @@ export default function AdminApp() {
       return;
     }
 
-    setContractsNotice(draft.fields.length > 0 ? "Restored your last contract draft." : "");
+    setContractsNotice(draft.fields.length > 0 ? "Restored your last document draft." : "");
   };
 
   const fetchAdminData = async (
@@ -3977,7 +4077,7 @@ export default function AdminApp() {
 
   useEffect(() => {
     const storedTheme = safeJsonParse<"dark" | "light">(localStorage.getItem(THEME_KEY), "dark");
-    const storedToken = localStorage.getItem(SESSION_TOKEN_KEY);
+    const storedToken = isFirebaseAuthConfigured ? null : localStorage.getItem(SESSION_TOKEN_KEY);
     const storedUser = storedToken
       ? safeJsonParse<ApiUser | null>(localStorage.getItem(SESSION_USER_KEY), null)
       : null;
@@ -4007,6 +4107,9 @@ export default function AdminApp() {
       setAuthMode("reset");
       setAuthNotice("Reset token detected. Set your new password.");
     }
+    if (!isFirebaseAuthConfigured && !storedToken) {
+      setIsSessionChecking(false);
+    }
     setHydrated(true);
   }, []);
 
@@ -4014,7 +4117,7 @@ export default function AdminApp() {
     if (!hydrated) return;
 
     let cancelled = false;
-    const shouldRestoreDraft = window.location.pathname.startsWith("/admin/contracts/draft");
+    const shouldRestoreDraft = isContractDraftRoute(window.location.pathname);
     if (!shouldRestoreDraft) {
       setContractDraftStorageReady(true);
       return;
@@ -4028,7 +4131,7 @@ export default function AdminApp() {
         }
       } catch {
         if (!cancelled) {
-          setContractsNotice("Could not restore the previous contract draft from this browser.");
+          setContractsNotice("Could not restore the previous document draft from this browser.");
         }
       } finally {
         if (!cancelled) {
@@ -4050,13 +4153,56 @@ export default function AdminApp() {
   }, [theme, hydrated]);
 
   useEffect(() => {
+    if (!hydrated || !firebaseAuth) return;
+
+    let cancelled = false;
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (firebaseUser) => {
+      if (!firebaseUser) {
+        if (!cancelled) {
+          if (token) {
+            clearSession();
+          }
+          setIsSessionChecking(false);
+        }
+        return;
+      }
+
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        if (cancelled) return;
+        if (bootstrappedTokenRef.current === idToken) {
+          setIsSessionChecking(false);
+          return;
+        }
+        const response = await requestJson<{ user: ApiUser }>("/auth/session", {
+          method: "POST",
+          body: JSON.stringify({ idToken }),
+        });
+        if (!cancelled) {
+          await handleAuthSuccess(idToken, response.user);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        openSessionExpiredDialog(
+          error instanceof Error ? error.message : "Could not restore your session.",
+        );
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [hydrated]);
+
+  useEffect(() => {
     if (!hydrated || !token) return;
     persistActiveSection(activeSection);
   }, [activeSection, hydrated, token]);
 
   useEffect(() => {
     const syncContractDraftRoute = () => {
-      setIsContractDraftOpen(window.location.pathname.startsWith("/admin/contracts/draft"));
+      setIsContractDraftOpen(isContractDraftRoute(window.location.pathname));
     };
 
     window.addEventListener("popstate", syncContractDraftRoute);
@@ -4217,17 +4363,21 @@ export default function AdminApp() {
         setActiveUser(me.user);
         localStorage.setItem(SESSION_USER_KEY, JSON.stringify(me.user));
         await fetchAdminData(token, me.user.id);
+        if (!cancelled) {
+          setIsSessionChecking(false);
+        }
       } catch (error) {
         if (cancelled) return;
         bootstrappedTokenRef.current = null;
         if (isAuthExpiredError(error)) {
-          openSessionExpiredDialog();
+          openSessionExpiredDialog(
+            error instanceof Error ? error.message : "Your session has expired.",
+          );
           return;
         }
-        const message = error instanceof Error ? error.message : "Session expired.";
-        setAuthError(message);
-        clearSession();
-        setIsLoadingData(false);
+        openSessionExpiredDialog(
+          error instanceof Error ? error.message : "Could not verify your session.",
+        );
       }
     };
 
@@ -4250,7 +4400,11 @@ export default function AdminApp() {
     setSignupConfirmPassword("");
     setNextPassword("");
     setConfirmPassword("");
+    setActiveSection("contracts");
+    setIsContractDraftOpen(false);
     await fetchAdminData(nextToken, user.id);
+    setIsDocumentChooserOpen(true);
+    setIsSessionChecking(false);
   };
 
   const resetAuthFields = () => {
@@ -4276,30 +4430,29 @@ export default function AdminApp() {
     }
 
     try {
-      const response = await requestJson<{
-        token?: string;
-        user?: ApiUser;
-        message?: string;
-      }>("/auth/signup", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
-          password,
-        }),
-      });
-
-      if (response.token && response.user) {
-        await handleAuthSuccess(response.token, response.user);
-        return;
+      if (!firebaseAuth) {
+        throw new Error("Firebase Auth is not configured yet.");
       }
 
-      setAuthNotice(response.message || "Signup submitted. Awaiting admin approval.");
-      setAuthMode("login");
+      const credential = await createUserWithEmailAndPassword(
+        firebaseAuth,
+        email.trim().toLowerCase(),
+        password,
+      );
+      const displayName = name.trim();
+      if (displayName) {
+        await updateProfile(credential.user, { displayName });
+      }
+      const idToken = await credential.user.getIdToken(true);
+      const response = await requestJson<{ user: ApiUser }>("/auth/session", {
+        method: "POST",
+        body: JSON.stringify({ idToken }),
+      });
+      await handleAuthSuccess(idToken, response.user);
       setPassword("");
       setSignupConfirmPassword("");
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Signup failed.");
+      setAuthError(getFirebaseAuthErrorMessage(error, "Signup failed."));
     } finally {
       setIsSignupSubmitting(false);
     }
@@ -4313,92 +4466,51 @@ export default function AdminApp() {
     setIsLoginSubmitting(true);
 
     try {
-      const response = await requestJson<{ token: string; user: ApiUser }>("/auth/login", {
+      if (!firebaseAuth) {
+        throw new Error("Firebase Auth is not configured yet.");
+      }
+
+      const credential = await signInWithEmailAndPassword(
+        firebaseAuth,
+        email.trim().toLowerCase(),
+        password,
+      );
+      const idToken = await credential.user.getIdToken();
+      const response = await requestJson<{ user: ApiUser }>("/auth/session", {
         method: "POST",
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-          password,
-        }),
+        body: JSON.stringify({ idToken }),
       });
-      await handleAuthSuccess(response.token, response.user);
+      await handleAuthSuccess(idToken, response.user);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Login failed.");
+      setAuthError(getFirebaseAuthErrorMessage(error, "Login failed."));
     } finally {
       setIsLoginSubmitting(false);
     }
   };
 
-  const handleGoogleCredential = async (credential: string) => {
+  const handleGoogleSignIn = async () => {
     if (isGoogleSubmitting) return;
     setAuthError("");
     setAuthNotice("");
     setIsGoogleSubmitting(true);
 
     try {
-      const response = await requestJson<{
-        token?: string;
-        user?: ApiUser;
-        message?: string;
-      }>("/auth/google", {
-        method: "POST",
-        body: JSON.stringify({ credential }),
-      });
-
-      if (response.token && response.user) {
-        await handleAuthSuccess(response.token, response.user);
-        return;
+      if (!firebaseAuth) {
+        throw new Error("Firebase Auth is not configured yet.");
       }
-      setAuthNotice(response.message || "Google account submitted for approval.");
+      const credential = await signInWithPopup(firebaseAuth, new GoogleAuthProvider());
+      const idToken = await credential.user.getIdToken();
+      const response = await requestJson<{ user: ApiUser }>("/auth/session", {
+        method: "POST",
+        body: JSON.stringify({ idToken }),
+      });
+      await handleAuthSuccess(idToken, response.user);
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Google sign-in failed.");
+      setAuthError(getFirebaseAuthErrorMessage(error, "Google sign-in failed."));
     } finally {
       setIsGoogleSubmitting(false);
     }
   };
-
-  useEffect(() => {
-    if (token || (authMode !== "login" && authMode !== "signup")) return;
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim();
-    if (!clientId) return;
-
-    let cancelled = false;
-    const renderGoogleButton = () => {
-      const google = (window as Window & { google?: any }).google;
-      if (cancelled || !google?.accounts?.id || !googleButtonRef.current) return;
-      google.accounts.id.initialize({
-        client_id: clientId,
-        callback: ({ credential }: { credential?: string }) => {
-          if (credential) void handleGoogleCredential(credential);
-        },
-      });
-      googleButtonRef.current.replaceChildren();
-      google.accounts.id.renderButton(googleButtonRef.current, {
-        type: "standard",
-        theme: theme === "dark" ? "filled_black" : "outline",
-        size: "large",
-        shape: "rectangular",
-        text: authMode === "signup" ? "signup_with" : "signin_with",
-        width: Math.min(420, googleButtonRef.current.clientWidth || 420),
-      });
-    };
-
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[src="https://accounts.google.com/gsi/client"]',
-    );
-    if (existingScript) {
-      if ((window as Window & { google?: any }).google) renderGoogleButton();
-      else existingScript.addEventListener("load", renderGoogleButton, { once: true });
-    } else {
-      const script = document.createElement("script");
-      script.src = "https://accounts.google.com/gsi/client";
-      script.async = true;
-      script.defer = true;
-      script.addEventListener("load", renderGoogleButton, { once: true });
-      document.head.appendChild(script);
-    }
-
-    return () => { cancelled = true; };
-  }, [authMode, theme, token]);
 
   const handleForgotPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -4406,19 +4518,14 @@ export default function AdminApp() {
     setAuthNotice("");
 
     try {
-      const response = await requestJson<{ message?: string }>("/auth/forgot-password", {
-        method: "POST",
-        body: JSON.stringify({
-          email: email.trim().toLowerCase(),
-        }),
-      });
-      setAuthNotice(
-        response.message ||
-          "If the email exists, a password reset link has been sent.",
-      );
+      if (!firebaseAuth) {
+        throw new Error("Firebase Auth is not configured yet.");
+      }
+      await sendPasswordResetEmail(firebaseAuth, email.trim().toLowerCase());
+      setAuthNotice("If the email exists, a password reset link has been sent.");
       setAuthMode("login");
     } catch (error) {
-      setAuthError(error instanceof Error ? error.message : "Failed to request reset link.");
+      setAuthError(getFirebaseAuthErrorMessage(error, "Failed to request reset link."));
     }
   };
 
@@ -4459,6 +4566,9 @@ export default function AdminApp() {
   };
 
   const handleSignOut = () => {
+    if (firebaseAuth) {
+      void signOut(firebaseAuth).catch(() => undefined);
+    }
     clearSession();
     setActiveSection("dashboard");
   };
@@ -4467,9 +4577,20 @@ export default function AdminApp() {
     setIsSessionExpiredDialogOpen(false);
     clearSession();
     setAuthMode("login");
+    setIsSessionChecking(false);
   };
 
   const selectActiveSection = (section: SectionId) => {
+    if (section === "contracts") {
+      setActiveSection("contracts");
+      persistActiveSection("contracts");
+      clearAdminError("contracts");
+      if (!isContractDraftRoute(window.location.pathname)) {
+        window.history.pushState(null, "", "/admin/contracts/draft");
+      }
+      setIsContractDraftOpen(true);
+      return;
+    }
     setActiveSection(section);
     persistActiveSection(section);
   };
@@ -5222,9 +5343,8 @@ export default function AdminApp() {
   };
 
   const markContractDraftUnsaved = () => {
-    setContractSelectedTemplateId("");
+    setIsContractDraftDirty(true);
     setContractDraftCreatedId(null);
-    setIsContractSendDropdownOpen(false);
   };
 
   const resetContractDraft = () => {
@@ -5255,7 +5375,7 @@ export default function AdminApp() {
     setContractRecipientName("");
     setContractRecipientEmail("");
     setContractDraftCreatedId(null);
-    setIsContractSendDropdownOpen(false);
+    setIsContractDraftDirty(false);
   };
 
   const openContractDraft = (template?: AdminContractTemplate) => {
@@ -5279,7 +5399,6 @@ export default function AdminApp() {
     setIsContractEraserModeActive(false);
     setIsContractEraserMenuInteracting(false);
     setContractDraftCreatedId(null);
-    setIsContractSendDropdownOpen(false);
 
     if (template) {
       setContractTemplateName(template.name);
@@ -5290,6 +5409,7 @@ export default function AdminApp() {
       setContractTemplateFields(template.fields);
       setContractSelectedTemplateId(template.id);
       setContractTitle(template.title);
+      setIsContractDraftDirty(false);
     } else {
       resetContractDraft();
     }
@@ -5298,15 +5418,6 @@ export default function AdminApp() {
       window.history.pushState(null, "", "/admin/contracts/draft");
     }
     setIsContractDraftOpen(true);
-  };
-
-  const closeContractDraft = () => {
-    setActiveSection("contracts");
-    setIsContractDraftOpen(false);
-    setIsContractSendDropdownOpen(false);
-    if (window.location.pathname.startsWith("/admin/contracts/draft")) {
-      window.history.pushState(null, "", "/admin");
-    }
   };
 
   const clearContractDraftPdf = () => {
@@ -5339,6 +5450,23 @@ export default function AdminApp() {
     setContractsNotice("");
   };
 
+  const exitContractDraft = () => {
+    void deleteStoredContractDraft().catch(() => undefined);
+    setIsContractExitConfirmOpen(false);
+    resetContractDraft();
+    setIsContractDraftOpen(false);
+    setIsDocumentChooserOpen(true);
+    window.history.pushState(null, "", "/admin");
+  };
+
+  const requestContractDraftExit = () => {
+    if (isContractDraftDirty) {
+      setIsContractExitConfirmOpen(true);
+      return;
+    }
+    exitContractDraft();
+  };
+
   const getContractPdfBaseName = (fileName: string) =>
     fileName
       .replace(/\.[^.]+$/, "")
@@ -5354,6 +5482,7 @@ export default function AdminApp() {
 
     const shouldKeepRestoredFields = !contractDraftPdfUrl && contractTemplateFields.length > 0;
     markContractDraftUnsaved();
+    setContractSelectedTemplateId("");
     setContractTemplatePdfFile(file);
     setContractTemplateExistingPdf(null);
     if (!shouldKeepRestoredFields) {
@@ -5378,7 +5507,7 @@ export default function AdminApp() {
 
     if (!file) return;
 
-    const baseName = getContractPdfBaseName(file.name) || "Contract agreement";
+    const baseName = getContractPdfBaseName(file.name) || "Document";
     setContractTemplateName(baseName);
     setContractTemplateTitle(baseName);
     setContractTitle((current) => current || baseName);
@@ -5444,12 +5573,49 @@ export default function AdminApp() {
               ? 0.08
               : 0.022;
     const page = position?.page ?? Math.min(Math.max(contractTemplateActivePage, 1), contractTemplatePageCount);
+    const visiblePagePosition = (() => {
+      if (position) return position;
+      const stage = contractPdfStageRef.current;
+      const pageElement = stage?.querySelector<HTMLElement>(
+        `[data-contract-pdf-page="${page}"]`,
+      );
+      if (!stage || !pageElement) return null;
+
+      const stageRect = stage.getBoundingClientRect();
+      const pageRect = pageElement.getBoundingClientRect();
+      const visibleLeft = Math.max(stageRect.left, pageRect.left);
+      const visibleRight = Math.min(stageRect.right, pageRect.right);
+      const visibleTop = Math.max(stageRect.top, pageRect.top);
+      const visibleBottom = Math.min(stageRect.bottom, pageRect.bottom);
+      if (visibleRight <= visibleLeft || visibleBottom <= visibleTop) return null;
+
+      return {
+        page,
+        x: clampAdminNumber(
+          ((visibleLeft + visibleRight) / 2 - pageRect.left) / pageRect.width,
+          0,
+          1,
+        ),
+        y: clampAdminNumber(
+          ((visibleTop + visibleBottom) / 2 - pageRect.top) / pageRect.height,
+          0,
+          1,
+        ),
+      };
+    })();
+    const targetPosition = position ?? visiblePagePosition;
     const field: ContractPdfField = {
       id: `field-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       type,
       page,
-      x: Math.min(Math.max(position ? position.x - width / 2 : type === "textbox" ? 0.2 : 0.12, 0), 1 - width),
-      y: Math.min(Math.max(position ? position.y - height / 2 : type === "textbox" ? 0.28 : 0.18, 0), 1 - height),
+      x: Math.min(
+        Math.max(targetPosition ? targetPosition.x - width / 2 : type === "textbox" ? 0.2 : 0.12, 0),
+        1 - width,
+      ),
+      y: Math.min(
+        Math.max(targetPosition ? targetPosition.y - height / 2 : type === "textbox" ? 0.28 : 0.18, 0),
+        1 - height,
+      ),
       width,
       height,
       objectLabel: getContractFieldDefaultObjectLabel({ type }, contractTemplateFields.length),
@@ -5570,7 +5736,7 @@ export default function AdminApp() {
       );
       setContractsNotice("Image attached to object.");
     } catch (error) {
-      showAdminError("contracts", error, "Failed to upload contract image.");
+      showAdminError("contracts", error, "Failed to upload document image.");
     } finally {
       setContractImageUploadingFieldId((current) => (current === fieldId ? null : current));
     }
@@ -5580,11 +5746,6 @@ export default function AdminApp() {
     pendingContractImageUploadFieldIdRef.current = fieldId;
     setSelectedContractFieldId(fieldId);
     contractImageObjectInputRef.current?.click();
-  };
-
-  const deleteSelectedContractField = () => {
-    if (!selectedContractFieldId) return;
-    deleteContractField(selectedContractFieldId);
   };
 
   const toggleContractFieldLock = (fieldId: string) => {
@@ -5755,6 +5916,36 @@ export default function AdminApp() {
     clearContractFieldDragState();
   };
 
+  const updateContractPdfZoom = useCallback(
+    (getNextZoom: (currentZoom: number) => number) => {
+      const pdfStage = contractPdfStageRef.current;
+      const centerRatioX = pdfStage
+        ? (pdfStage.scrollLeft + pdfStage.clientWidth / 2) / Math.max(pdfStage.scrollWidth, 1)
+        : 0.5;
+      const centerRatioY = pdfStage
+        ? (pdfStage.scrollTop + pdfStage.clientHeight / 2) / Math.max(pdfStage.scrollHeight, 1)
+        : 0.5;
+
+      setContractPdfZoom((currentZoom) => {
+        const nextZoom = getNextZoom(currentZoom);
+        contractPdfZoomRef.current = nextZoom;
+        if (nextZoom === currentZoom || !pdfStage) return nextZoom;
+
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            pdfStage.scrollLeft =
+              centerRatioX * pdfStage.scrollWidth - pdfStage.clientWidth / 2;
+            pdfStage.scrollTop =
+              centerRatioY * pdfStage.scrollHeight - pdfStage.clientHeight / 2;
+          });
+        });
+
+        return nextZoom;
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (!isContractDraftOpen || !contractDraftPdfUrl) return;
 
@@ -5765,7 +5956,7 @@ export default function AdminApp() {
       if (!event.ctrlKey && !event.metaKey) return;
       event.preventDefault();
       event.stopPropagation();
-      setContractPdfZoom((current) =>
+      updateContractPdfZoom((current) =>
         Math.min(
           300,
           Math.max(contractPdfFitZoomRef.current, current + (event.deltaY < 0 ? 10 : -10)),
@@ -5775,7 +5966,7 @@ export default function AdminApp() {
 
     pdfStage.addEventListener("wheel", handleContractPdfZoom, { passive: false });
     return () => pdfStage.removeEventListener("wheel", handleContractPdfZoom);
-  }, [contractDraftPdfUrl, isContractDraftOpen]);
+  }, [contractDraftPdfUrl, isContractDraftOpen, updateContractPdfZoom]);
 
   useEffect(() => {
     setContractPdfZoom(100);
@@ -5793,23 +5984,46 @@ export default function AdminApp() {
     if (!pdfStage) return;
 
     let frame = 0;
+    let observedPage: HTMLElement | null = null;
     const updateFitZoom = () => {
       window.cancelAnimationFrame(frame);
       frame = window.requestAnimationFrame(() => {
         const page = pdfStage.querySelector<HTMLElement>("[data-contract-pdf-page='1']");
         if (!page || page.offsetHeight === 0) return;
+        if (page !== observedPage) {
+          observedPage = page;
+          resizeObserver.observe(page);
+        }
 
         const previousFit = contractPdfFitZoomRef.current;
-        const unscaledPageHeight = page.getBoundingClientRect().height / (contractPdfZoomRef.current / 100);
+        const pageRect = page.getBoundingClientRect();
+        const currentScale = contractPdfZoomRef.current / 100;
+        const unscaledPageWidth = pageRect.width / currentScale;
+        const unscaledPageHeight = pageRect.height / currentScale;
+        const availableWidth = Math.max(1, pdfStage.clientWidth - 32);
         const availableHeight = Math.max(1, pdfStage.clientHeight - 32);
-        const nextFit = Math.min(100, Math.max(25, Math.floor((availableHeight / unscaledPageHeight) * 100)));
+        const nextFit = Math.min(
+          100,
+          Math.max(
+            25,
+            Math.floor(
+              Math.min(
+                availableWidth / unscaledPageWidth,
+                availableHeight / unscaledPageHeight,
+              ) * 100,
+            ),
+          ),
+        );
         if (nextFit === previousFit) return;
 
         contractPdfFitZoomRef.current = nextFit;
         setContractPdfFitZoom(nextFit);
-        setContractPdfZoom((current) =>
-          current === previousFit || current === 100 ? nextFit : Math.max(nextFit, current),
-        );
+        setContractPdfZoom((current) => {
+          const nextZoom =
+            current === previousFit || current === 100 ? nextFit : Math.max(nextFit, current);
+          contractPdfZoomRef.current = nextZoom;
+          return nextZoom;
+        });
       });
     };
 
@@ -5989,7 +6203,7 @@ export default function AdminApp() {
   const saveContractTemplateDraft = async () => {
     const pdfFileName =
       contractTemplatePdfFile?.name || contractTemplateExistingPdf?.fileName || "";
-    const fallbackName = getContractPdfBaseName(pdfFileName) || "Contract agreement";
+    const fallbackName = getContractPdfBaseName(pdfFileName) || "Document";
     const templateName = contractTemplateName.trim() || fallbackName;
     const templateTitle = contractTemplateTitle.trim() || templateName;
 
@@ -6020,12 +6234,15 @@ export default function AdminApp() {
         : contractTemplateExistingPdf;
 
       if (!pdfDocument) {
-        throw new Error("Contract PDF is required.");
+        throw new Error("Document PDF is required.");
       }
+      const selectedTemplateId = contractSelectedTemplateId;
       const response = await requestJson<{ data: AdminContractTemplateApi }>(
-        "/admin/contracts/templates",
+        selectedTemplateId
+          ? `/admin/contracts/templates/${encodeURIComponent(selectedTemplateId)}`
+          : "/admin/contracts/templates",
         {
-          method: "POST",
+          method: selectedTemplateId ? "PUT" : "POST",
           body: JSON.stringify({
             name: templateName,
             title: templateTitle,
@@ -6043,7 +6260,13 @@ export default function AdminApp() {
       );
       const nextTemplate = mapContractTemplate(response.data);
       invalidateAdminDataCache();
-      setContractTemplates((prev) => [nextTemplate, ...prev]);
+      setContractTemplates((prev) =>
+        selectedTemplateId
+          ? prev.map((template) =>
+              template.id === selectedTemplateId ? nextTemplate : template,
+            )
+          : [nextTemplate, ...prev],
+      );
       setContractTemplateName(nextTemplate.name);
       setContractTemplateTitle(nextTemplate.title);
       setContractTemplatePdfFile(null);
@@ -6056,14 +6279,95 @@ export default function AdminApp() {
       setContractSelectedTemplateId(nextTemplate.id);
       setContractTitle(nextTemplate.title);
       setContractDraftCreatedId(null);
-      setIsContractSendDropdownOpen(false);
-      setContractsNotice("Contract layout saved.");
+      setIsContractDraftDirty(false);
+      setContractsNotice("Document layout saved.");
       return nextTemplate;
     } catch (error) {
-      showAdminError("contracts", error, "Failed to save contract template.");
+      showAdminError("contracts", error, "Failed to save document template.");
       return null;
     } finally {
       setContractTemplateSaving(false);
+    }
+  };
+
+  const finalizeContractTemplateDraft = async (
+    preparedTemplate?: AdminContractTemplate,
+  ) => {
+    if (isContractFinalizing) return null;
+    setIsContractFinalizing(true);
+
+    try {
+      const savedTemplate = preparedTemplate ?? (await saveContractTemplateDraft());
+      if (!savedTemplate || !token) return null;
+      const response = await requestJson<{ data: AdminContractTemplateApi }>(
+        `/admin/contracts/templates/${encodeURIComponent(savedTemplate.id)}/finalize`,
+        { method: "POST" },
+        token,
+      );
+      const finalizedTemplate = mapContractTemplate(response.data);
+      invalidateAdminDataCache();
+      setContractTemplates((current) =>
+        current.map((template) =>
+          template.id === finalizedTemplate.id ? finalizedTemplate : template,
+        ),
+      );
+      setContractSelectedTemplateId(finalizedTemplate.id);
+      setCompletedContractTemplateId(finalizedTemplate.id);
+      setContractsNotice("Document completed and saved as a read-only template.");
+      return finalizedTemplate;
+    } catch (error) {
+      showAdminError("contracts", error, "Failed to complete the document.");
+      return null;
+    } finally {
+      setIsContractFinalizing(false);
+    }
+  };
+
+  const submitSigningInvitations = async () => {
+    if (!token || signerEmails.length === 0 || isSigningInvitationsSubmitting) {
+      return false;
+    }
+
+    setIsSigningInvitationsSubmitting(true);
+    clearAdminError("contracts");
+    try {
+      const savedTemplate = await saveContractTemplateDraft();
+      if (!savedTemplate) return false;
+
+      const createdContracts: AdminContract[] = [];
+      for (const signerEmail of signerEmails) {
+        const createResponse = await requestJson<{ data: AdminContractApi }>(
+          "/admin/contracts",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              templateId: savedTemplate.id,
+              title: savedTemplate.title,
+              recipientName: signerEmail.split("@")[0] || signerEmail,
+              recipientEmail: signerEmail,
+            }),
+          },
+          token,
+        );
+        const createdContract = mapContract(createResponse.data);
+        const sendResponse = await requestJson<AdminContractEmailResponse>(
+          `/admin/contracts/${createdContract.id}/send`,
+          { method: "POST" },
+          token,
+        );
+        createdContracts.push(mapContract(sendResponse.data));
+      }
+
+      setContracts((current) => [...createdContracts, ...current]);
+      const finalizedTemplate = await finalizeContractTemplateDraft(savedTemplate);
+      if (!finalizedTemplate) return false;
+      setContractsNotice("Invitations sent and document marked as done.");
+      return true;
+    } catch (error) {
+      showAdminError("contracts", error, "Failed to send signing invitations.");
+      return false;
+    } finally {
+      setIsSigningInvitationsSubmitting(false);
     }
   };
 
@@ -6117,9 +6421,9 @@ export default function AdminApp() {
       setContractRecipientEmail("");
       setContractSearch("");
       setContractDraftCreatedId(nextContract.id);
-      setContractsNotice(`Contract link created for ${nextContract.recipientName}.`);
+      setContractsNotice(`Document link created for ${nextContract.recipientName}.`);
     } catch (error) {
-      showAdminError("contracts", error, "Failed to create contract.");
+      showAdminError("contracts", error, "Failed to create document.");
     } finally {
       setContractCreating(false);
     }
@@ -6129,12 +6433,12 @@ export default function AdminApp() {
     setContractsNotice("");
     try {
       await navigator.clipboard.writeText(contract.contractUrl);
-      setContractsNotice(`Copied contract link for ${contract.recipientName}.`);
+      setContractsNotice(`Copied document link for ${contract.recipientName}.`);
     } catch (error) {
       showAdminError(
         "contracts",
         error,
-        "Failed to copy contract link. Open the link and copy it manually.",
+        "Failed to copy document link. Open the link and copy it manually.",
       );
     }
   };
@@ -6158,17 +6462,17 @@ export default function AdminApp() {
       if (response.emailDelivery?.status === "failed") {
         setContractsNotice(
           [
-            `Contract link is ready for ${nextContract.recipientName}, but the email was not sent.`,
+            `Document link is ready for ${nextContract.recipientName}, but the email was not sent.`,
             response.emailDelivery.message,
           ]
             .filter(Boolean)
             .join(" "),
         );
       } else {
-        setContractsNotice(`Contract email sent to ${nextContract.recipientEmail}.`);
+        setContractsNotice(`Document email sent to ${nextContract.recipientEmail}.`);
       }
     } catch (error) {
-      showAdminError("contracts", error, "Failed to send contract email.");
+      showAdminError("contracts", error, "Failed to send document email.");
     } finally {
       setContractSendingId((prev) => (prev === id ? null : prev));
     }
@@ -6193,9 +6497,9 @@ export default function AdminApp() {
           ),
         );
       }
-      setContractsNotice("Contract deleted.");
+      setContractsNotice("Document deleted.");
     } catch (error) {
-      showAdminError("contracts", error, "Failed to delete contract.");
+      showAdminError("contracts", error, "Failed to delete document.");
     } finally {
       setContractDeletingId((prev) => (prev === id ? null : prev));
     }
@@ -6219,9 +6523,9 @@ export default function AdminApp() {
         setContractSelectedTemplateId("");
         setContractTitle("");
       }
-      setContractsNotice("Contract template deleted.");
+      setContractsNotice("Document template deleted.");
     } catch (error) {
-      showAdminError("contracts", error, "Failed to delete contract template.");
+      showAdminError("contracts", error, "Failed to delete document template.");
     } finally {
       setContractTemplateDeletingId((prev) => (prev === id ? null : prev));
     }
@@ -6670,7 +6974,7 @@ export default function AdminApp() {
     }
   };
 
-  const approvePendingAdmin = async (id: string) => {
+  const approvePendingUser = async (id: string) => {
     if (!token) return;
     setRequestProcessingId(id);
     clearAdminError("requests");
@@ -6678,7 +6982,7 @@ export default function AdminApp() {
     try {
       await requestJson(`/admin/users/${id}/approve`, { method: "PATCH" }, token);
       invalidateAdminDataCache();
-      setPendingAdmins((prev) => prev.filter((user) => user.id !== id));
+      setPendingUsers((prev) => prev.filter((user) => user.id !== id));
       setRequestsNotice("Account approved.");
     } catch (error) {
       showAdminError("requests", error, "Failed to approve account.");
@@ -6687,7 +6991,7 @@ export default function AdminApp() {
     }
   };
 
-  const rejectPendingAdmin = async (id: string) => {
+  const rejectPendingUser = async (id: string) => {
     if (!token) return;
     setRequestProcessingId(id);
     clearAdminError("requests");
@@ -6695,7 +6999,7 @@ export default function AdminApp() {
     try {
       await requestJson(`/admin/users/${id}/reject`, { method: "DELETE" }, token);
       invalidateAdminDataCache();
-      setPendingAdmins((prev) => prev.filter((user) => user.id !== id));
+      setPendingUsers((prev) => prev.filter((user) => user.id !== id));
       setRequestsNotice("Account request rejected.");
     } catch (error) {
       showAdminError("requests", error, "Failed to reject account.");
@@ -6829,7 +7133,7 @@ export default function AdminApp() {
         <div className={styles.adminDialog__header}>
           <div>
             <h3 id="session-expired-title">Session Expired</h3>
-            <p>You may need to re-login to continue.</p>
+            <p>{sessionExpiredMessage}</p>
           </div>
           <button
             type="button"
@@ -6847,17 +7151,31 @@ export default function AdminApp() {
             className={styles.projectManager__createButton}
             onClick={dismissSessionExpiredDialog}
           >
-            Continue to Login
+            OK
           </button>
         </div>
       </div>
     </div>
   ) : null;
 
-  if (!hydrated) {
+  if (!hydrated || isSessionChecking || (isSessionExpiredDialogOpen && !token)) {
     return (
-      <div className={styles.admin}>
-        <div className={styles.admin__loading}>Loading Writly...</div>
+      <div
+        className={`${styles.admin} ${theme === "dark" ? styles["admin--dark"] : ""}`}
+        aria-busy={isSessionChecking}
+      >
+        <div className={styles.sessionGate}>
+          {isSessionChecking && (
+            <div className={styles.sessionGate__status} role="status" aria-live="polite">
+              <span className={styles.sessionGate__spinner} aria-hidden="true">
+                <img src="/writly-logo.svg" alt="" />
+              </span>
+              <strong>Checking your session</strong>
+              <p>Please wait while Writly securely restores your workspace.</p>
+            </div>
+          )}
+        </div>
+        {sessionExpiredDialog}
       </div>
     );
   }
@@ -6891,20 +7209,18 @@ export default function AdminApp() {
           )}
           <section className={styles.auth__story} aria-label="About Writly">
             <a href="/" className={styles.auth__storyBrand}>
-              <span className={styles.auth__logoMark}><FileText size={24} /></span>
+              <span className={styles.auth__logoMark}>
+                <img src={writlyLoginLogo} alt="" className={styles.auth__logoImage} />
+              </span>
               <span>Writly</span>
             </a>
             <div className={styles.auth__storyContent}>
-              <span className={styles.auth__eyebrow}>Contracts, without the busywork</span>
-              <h1>From first draft to final signature.</h1>
+              <span className={styles.auth__eyebrow}>PDF documents, ready to sign</span>
+              <h1>Build, send, and sign documents in one workspace.</h1>
               <p>
-                Create polished contracts, collect signatures, and keep every agreement
-                moving from one focused workspace.
+                Upload a PDF, place text and signature fields, save reusable templates,
+                send recipient links, and export completed agreements.
               </p>
-              <div className={styles.auth__proof}>
-                <span><BadgeCheck size={17} /> Secure by design</span>
-                <span><BadgeCheck size={17} /> Built for clear workflows</span>
-              </div>
             </div>
             <p className={styles.auth__copyright}>© {new Date().getFullYear()} Writly</p>
           </section>
@@ -6925,7 +7241,7 @@ export default function AdminApp() {
                 </h1>
                 <p>
                   {authMode === "signup"
-                    ? "Create an account to draft, send, and manage contracts."
+                    ? "Create an account to draft, send, and manage documents."
                     : "Pick up where you left off."}
                 </p>
               </div>
@@ -6967,14 +7283,27 @@ export default function AdminApp() {
 
             {(authMode === "login" || authMode === "signup") && (
               <>
-                {import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim() ? (
-                  <div
-                    ref={googleButtonRef}
-                    className={`${styles.auth__google} ${isGoogleSubmitting ? styles["auth__google--loading"] : ""}`}
-                    aria-label={`${authMode === "signup" ? "Sign up" : "Sign in"} with Google`}
-                  />
+                {isFirebaseAuthConfigured ? (
+                  <button
+                    type="button"
+                    className={`${styles.auth__google} ${
+                      isGoogleSubmitting ? styles["auth__google--loading"] : ""
+                    }`}
+                    onClick={() => void handleGoogleSignIn()}
+                    disabled={isGoogleSubmitting || isLoginSubmitting || isSignupSubmitting}
+                    aria-label={isGoogleSubmitting ? "Connecting to Google" : undefined}
+                  >
+                    {isGoogleSubmitting ? (
+                      <span className={styles.auth__googleSpinner} aria-hidden="true" />
+                    ) : (
+                      <>
+                        <GoogleLogo />
+                        <span>{authMode === "signup" ? "Sign up" : "Sign in"} with Google</span>
+                      </>
+                    )}
+                  </button>
                 ) : (
-                  <p className={styles.auth__googleSetup}>Google sign-in needs configuration.</p>
+                  <p className={styles.auth__googleSetup}>Firebase Auth needs configuration.</p>
                 )}
                 <div className={styles.auth__divider}><span>or continue with email</span></div>
               </>
@@ -7006,7 +7335,7 @@ export default function AdminApp() {
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="admin@email.com"
+                    placeholder="user@email.com"
                     disabled={isLoginSubmitting || isSignupSubmitting}
                     required
                   />
@@ -7087,7 +7416,7 @@ export default function AdminApp() {
             {authMode === "forgot" && (
               <form className={styles.auth__form} onSubmit={handleForgotPassword}>
                 <p className={styles.auth__muted}>
-                  Enter your admin email and we&apos;ll send you a reset link.
+                  Enter your email and we&apos;ll send you a reset link.
                 </p>
                 <label className={styles.auth__field}>
                   <span>Email</span>
@@ -7095,7 +7424,7 @@ export default function AdminApp() {
                     type="email"
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
-                    placeholder="admin@email.com"
+                    placeholder="user@email.com"
                     required
                   />
                 </label>
@@ -7121,7 +7450,7 @@ export default function AdminApp() {
             {authMode === "reset" && (
               <form className={styles.auth__form} onSubmit={handleResetPassword}>
                 <p className={styles.auth__muted}>
-                  Set a new password for your admin account.
+                  Set a new password for your account.
                 </p>
                 <label className={styles.auth__field}>
                   <span>New Password</span>
@@ -7185,11 +7514,241 @@ export default function AdminApp() {
               </form>
             )}
 
+            <p className={styles.auth__legal}>
+              By using Writly, you agree to our{" "}
+              <a href="/terms">Terms of Service</a>
+              {" "}and acknowledge our{" "}
+              <a href="/privacy">Privacy Policy</a>.
+            </p>
           </div>
         </main>
       </div>
     );
   }
+
+  const recentCompletedDocuments = [
+    ...contractTemplates
+      .filter((template) => template.isFinalized)
+      .map((template) => ({
+        id: `template-${template.id}`,
+        title: template.title,
+        fileName: template.pdfDocument.fileName,
+        fileUrl: template.pdfDocument.fileUrl,
+        updatedAt: template.updatedAt,
+        pdfDocument: template.pdfDocument,
+        pageCount: template.pageCount,
+        fields: template.fields,
+      })),
+    ...contracts
+      .filter((contract) => Boolean(contract.submittedAt))
+      .map((contract) => ({
+        id: `contract-${contract.id}`,
+        title: contract.title,
+        fileName: contract.pdfDocument.fileName,
+        fileUrl: contract.pdfDocument.fileUrl,
+        updatedAt: contract.submittedAt ?? contract.updatedAt,
+        pdfDocument: contract.pdfDocument,
+        pageCount: contract.pageCount,
+        fields: contract.fields,
+      })),
+  ]
+    .sort(
+      (left, right) =>
+        new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
+    )
+    .slice(0, 6);
+  const editableContractTemplates = contractTemplates
+    .filter((template) => !template.isFinalized)
+    .slice(0, 6);
+  const useCompletedDocumentAsTemplate = (
+    document: (typeof recentCompletedDocuments)[number],
+  ) => {
+    const senderFields = document.fields.filter((field) => {
+      if (field.type === "text" || field.type === "image" || field.type === "draw") {
+        return true;
+      }
+      if (field.type === "signature") {
+        return Boolean(field.imageUrl?.trim() || field.drawingDataUrl?.trim());
+      }
+      return false;
+    });
+
+    setIsDocumentChooserOpen(false);
+    openContractDraft({
+      id: "",
+      name: `${document.title} template`,
+      title: document.title,
+      pdfDocument: document.pdfDocument,
+      pageCount: document.pageCount,
+      fields: senderFields.map((field) => ({
+        ...field,
+        id: `${field.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        required: false,
+      })),
+      contractCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isFinalized: false,
+    });
+  };
+  const documentChooserDialog =
+    token && isDocumentChooserOpen
+      ? createPortal(
+          <div
+            className={styles.documentChooser}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="document-chooser-title"
+          >
+            <aside className={styles.documentChooser__sidebar}>
+              <span className={styles.documentChooser__brand}>
+                <span className={styles.documentChooser__brandMark}>
+                  <img src={writlyLoginLogo} alt="" />
+                </span>
+                Writly
+              </span>
+              <nav aria-label="Document start options">
+                <button type="button" className={styles["documentChooser__navButton--active"]}>
+                  <FileText size={18} /> Home
+                </button>
+                <button type="button" onClick={() => newDocumentInputRef.current?.click()}>
+                  <Plus size={18} /> New
+                </button>
+                <button type="button" onClick={() => newDocumentInputRef.current?.click()}>
+                  <FolderKanban size={18} /> Open
+                </button>
+              </nav>
+              <div className={styles.documentChooser__account}>
+                <span>{activeUser?.name?.slice(0, 1).toUpperCase() || "W"}</span>
+                <div>
+                  <strong>{activeUser?.name || "Writly user"}</strong>
+                  <small>{activeUser?.email}</small>
+                </div>
+                <button
+                  type="button"
+                  className={styles.documentChooser__logout}
+                  aria-label="Log out"
+                  title="Log out"
+                  onClick={handleSignOut}
+                >
+                  <LogOut size={17} />
+                </button>
+              </div>
+            </aside>
+
+            <main className={styles.documentChooser__main}>
+              <header className={styles.documentChooser__header}>
+                <div>
+                  <h2 id="document-chooser-title">Welcome to Writly</h2>
+                  <p>Create a new document or continue where you left off.</p>
+                </div>
+              </header>
+
+              <section className={styles.documentChooser__newSection}>
+                <div className={styles.documentChooser__sectionHeading}>
+                  <h3>New</h3>
+                </div>
+                <div className={styles.documentChooser__templateGallery}>
+                  <button
+                    type="button"
+                    className={styles.documentChooser__newTile}
+                    onClick={() => newDocumentInputRef.current?.click()}
+                  >
+                    <span>
+                      <Plus size={38} />
+                    </span>
+                    <strong>New Document</strong>
+                    <small>Open a PDF from your computer</small>
+                  </button>
+                  {editableContractTemplates.slice(0, 4).map((template) => (
+                    <button
+                      type="button"
+                      className={styles.documentChooser__templateTile}
+                      key={template.id}
+                      onClick={() => {
+                        setIsDocumentChooserOpen(false);
+                        openContractDraft(template);
+                      }}
+                    >
+                      <span>
+                        <FileText size={34} />
+                        <img src={writlyLoginLogo} alt="" />
+                      </span>
+                      <strong>{template.title}</strong>
+                      <small>{template.pdfDocument.fileName}</small>
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className={styles.documentChooser__recentSection}>
+                <div className={styles.documentChooser__sectionHeading}>
+                  <h3>Recent</h3>
+                  <span>Completed documents are read-only</span>
+                </div>
+                <div className={styles.documentChooser__recentTable}>
+                  <div className={styles.documentChooser__recentHeader}>
+                    <span>Name</span>
+                    <span>Modified</span>
+                  </div>
+                  {recentCompletedDocuments.length > 0 ? (
+                    recentCompletedDocuments.map((document) => (
+                      <div className={styles.documentChooser__recentRow} key={document.id}>
+                        <button
+                          type="button"
+                          className={styles.documentChooser__recentOpen}
+                          onClick={() =>
+                            window.open(document.fileUrl, "_blank", "noopener,noreferrer")
+                          }
+                        >
+                          <span className={styles.documentChooser__fileIcon}>
+                            <FileText size={20} />
+                          </span>
+                          <span>
+                            <strong>{document.title}</strong>
+                            <small>{document.fileName}</small>
+                          </span>
+                          <time>{new Date(document.updatedAt).toLocaleDateString()}</time>
+                          <Lock size={15} />
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.documentChooser__useTemplate}
+                          onClick={() => useCompletedDocumentAsTemplate(document)}
+                        >
+                          Use Template
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <div className={styles.documentChooser__empty}>
+                      <FileText size={28} />
+                      <strong>No recent documents</strong>
+                      <span>Your completed documents will appear here.</span>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <input
+                ref={newDocumentInputRef}
+                className={styles.documentChooser__fileInput}
+                type="file"
+                accept="application/pdf,.pdf"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  event.target.value = "";
+                  if (!file) return;
+                  setIsDocumentChooserOpen(false);
+                  openContractDraft();
+                  applyContractPdfFile(file);
+                }}
+              />
+            </main>
+          </div>,
+          document.body,
+        )
+      : null;
 
   if (isContractDraftOpen) {
     const contractDraftStatusPageCount = Math.max(1, contractTemplatePageCount);
@@ -7197,9 +7756,72 @@ export default function AdminApp() {
       Math.max(contractTemplateActivePage, 1),
       contractDraftStatusPageCount,
     );
+    const addSignerEmail = () => {
+      const normalizedEmail = signerEmailDraft.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+        setSignerEmailError("Enter a valid email address.");
+        return;
+      }
+      if (signerEmails.includes(normalizedEmail)) {
+        setSignerEmailError("This person is already on the signing list.");
+        return;
+      }
+      setSignerEmails((current) => [...current, normalizedEmail]);
+      setSignerEmailDraft("");
+      setSignerEmailError("");
+    };
+    const closeSigningFlow = () => {
+      setIsSigningFlowOpen(false);
+      setSigningFlowStep("choice");
+      setSignerEmailError("");
+      if (completedContractTemplateId) {
+        setCompletedContractTemplateId(null);
+        setIsContractDraftOpen(false);
+        setIsDocumentChooserOpen(true);
+        window.history.pushState(null, "", "/admin");
+      }
+    };
 
     return (
-      <div className={`${styles.admin} ${theme === "dark" ? styles["admin--dark"] : ""}`}>
+      <div
+        className={`${styles.admin} ${styles.contractEditorTheme} ${
+          isContractEditorDark ? styles["contractEditorTheme--dark"] : ""
+        }`}
+      >
+        {isContractExitConfirmOpen &&
+          createPortal(
+            <div
+              className={styles.contractExitConfirm}
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="contract-exit-title"
+              aria-describedby="contract-exit-description"
+            >
+              <div className={styles.contractExitConfirm__backdrop} />
+              <section className={styles.contractExitConfirm__panel}>
+                <span className={styles.contractExitConfirm__icon}>
+                  <AlertTriangle size={22} />
+                </span>
+                <h2 id="contract-exit-title">Exit without saving?</h2>
+                <p id="contract-exit-description">
+                  Your unsaved changes will be discarded and you will return to document
+                  selection.
+                </p>
+                <div className={styles.contractExitConfirm__actions}>
+                  <button
+                    type="button"
+                    onClick={() => setIsContractExitConfirmOpen(false)}
+                  >
+                    Keep editing
+                  </button>
+                  <button type="button" onClick={exitContractDraft}>
+                    Exit
+                  </button>
+                </div>
+              </section>
+            </div>,
+            document.body,
+          )}
         {sessionExpiredDialog}
         {adminError?.scope === "global" && (
           <div className={styles.adminErrorOverlay}>
@@ -7215,25 +7837,23 @@ export default function AdminApp() {
           {renderScopedError("contracts")}
 
           <header className={styles.contractDraft__topbar}>
-            <button
-              type="button"
-              className={styles.contractDraft__backButton}
-              onClick={closeContractDraft}
-            >
-              <ChevronLeft size={16} />
-              Back
-            </button>
             <div className={styles.contractDraft__title}>
-              <span>Draft</span>
               <div className={styles.contractDraft__titleRow}>
+                <img
+                  className={styles.contractDraft__appLogo}
+                  src="/writly-logo-white.svg"
+                  alt=""
+                  aria-hidden="true"
+                />
+                <strong className={styles.contractDraft__appTitle}>Writly</strong>
                 <h1>{contractDraftPdfLabel}</h1>
                 {contractDraftPdfUrl && (
                   <button
                     type="button"
                     className={styles.contractDraft__clearPdfButton}
-                    aria-label="Remove selected PDF"
-                    title="Remove selected PDF"
-                    onClick={clearContractDraftPdf}
+                    aria-label="Close document"
+                    title="Close document"
+                    onClick={requestContractDraftExit}
                   >
                     <X size={12} />
                   </button>
@@ -7540,6 +8160,19 @@ export default function AdminApp() {
                   <button
                     type="button"
                     className={styles.contractDraft__exportIconButton}
+                    aria-label={
+                      isContractEditorDark
+                        ? "Switch document editor to light theme"
+                        : "Switch document editor to dark theme"
+                    }
+                    title={isContractEditorDark ? "Light theme" : "Dark theme"}
+                    onClick={() => setIsContractEditorDark((current) => !current)}
+                  >
+                    {isContractEditorDark ? <Sun size={17} /> : <Moon size={17} />}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.contractDraft__exportIconButton}
                     aria-label="Print PDF copy"
                     title="Print PDF copy"
                     disabled={Boolean(contractPdfExporting)}
@@ -7559,157 +8192,102 @@ export default function AdminApp() {
                   </button>
                 </>
               )}
-              {isContractDraftSaved ? (
-                <>
-                  <button
-                    type="button"
-                    className={styles.contractDraft__saveButton}
-                    aria-expanded={isContractSendDropdownOpen}
-                    onClick={() => setIsContractSendDropdownOpen((prev) => !prev)}
-                  >
-                    <Send size={15} />
-                    Send to
-                    <ChevronDown size={15} />
-                  </button>
-                  {isContractSendDropdownOpen && (
-                    <div className={styles.contractDraft__sendDropdown}>
-                      <div className={styles.contractDraft__panelHeader}>
-                        <span>Recipient link</span>
-                        <strong>{contractDraftCreatedContract ? "Ready" : "Draft"}</strong>
-                      </div>
-
-                      <form className={styles.contractDraft__shareForm} onSubmit={createContract}>
-                        <label className={styles.projectManager__field}>
-                          <span>Recipient name</span>
-                          <input
-                            type="text"
-                            value={contractRecipientName}
-                            onChange={(event) => setContractRecipientName(event.target.value)}
-                            placeholder="Recipient name"
-                          />
-                        </label>
-                        <label className={styles.projectManager__field}>
-                          <span>Recipient email</span>
-                          <input
-                            type="email"
-                            value={contractRecipientEmail}
-                            onChange={(event) => setContractRecipientEmail(event.target.value)}
-                            placeholder="Optional for manual link sharing"
-                          />
-                        </label>
-                        <label className={styles.projectManager__field}>
-                          <span>Contract title</span>
-                          <input
-                            type="text"
-                            value={contractTitle}
-                            onChange={(event) => setContractTitle(event.target.value)}
-                            placeholder="Project Contract Agreement"
-                          />
-                        </label>
-                        <button
-                          type="submit"
-                          className={styles.tableToolbar__addButton}
-                          disabled={
-                            contractCreating ||
-                            !contractRecipientName.trim() ||
-                            !contractDraftPdfUrl ||
-                            contractTemplateFields.length === 0
-                          }
-                        >
-                          <Link2 size={14} />
-                          {contractCreating ? "Generating..." : "Generate Link"}
-                        </button>
-                      </form>
-
-                      {contractDraftCreatedContract && (
-                        <div className={styles.contractDraft__linkCard}>
-                          <span>Contract link</span>
-                          <a
-                            href={contractDraftCreatedContract.contractUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            {contractDraftCreatedContract.contractUrl}
-                          </a>
-                          <div className={styles.contractDraft__linkActions}>
-                            <button
-                              type="button"
-                              onClick={() => void copyContractLink(contractDraftCreatedContract)}
-                            >
-                              <Link2 size={13} />
-                              Copy
-                            </button>
-                            <button
-                              type="button"
-                              disabled={
-                                !contractDraftCreatedContract.recipientEmail ||
-                                contractSendingId === contractDraftCreatedContract.id
-                              }
-                              onClick={() => void sendContractEmail(contractDraftCreatedContract.id)}
-                            >
-                              <Send size={13} />
-                              {contractSendingId === contractDraftCreatedContract.id
-                                ? "Sending..."
-                                : "Email"}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              ) : (
+              <button
+                type="button"
+                className={styles.contractDraft__saveButton}
+                disabled={
+                  contractTemplateSaving ||
+                  !contractDraftPdfUrl ||
+                  contractTemplateFields.length === 0
+                }
+                onClick={() => void saveContractTemplateDraft()}
+              >
+                {contractTemplateSaving ? "Saving..." : "Save"}
+              </button>
+              {contractDraftPdfUrl && (
                 <button
                   type="button"
-                  className={styles.contractDraft__saveButton}
-                  disabled={
-                    contractTemplateSaving ||
-                    !contractDraftPdfUrl ||
-                    contractTemplateFields.length === 0
-                  }
-                  onClick={() => void saveContractTemplateDraft()}
+                  className={styles.contractDraft__doneButton}
+                  disabled={contractTemplateSaving}
+                  onClick={() => {
+                    setSigningFlowStep("choice");
+                    setIsSigningFlowOpen(true);
+                  }}
                 >
-                  <CheckCircle2 size={15} />
-                  {contractTemplateSaving ? "Saving..." : "Save"}
+                  {contractTemplateSaving ? "Saving..." : "Done"}
                 </button>
               )}
             </div>
           </header>
 
-          {(contractsNotice || contractDraftPdfUrl) && (
+          {contractDraftPdfUrl && (
             <div className={styles.contractDraft__statusBar}>
-              <span className={styles.contractDraft__statusMessage}>{contractsNotice}</span>
-              {contractDraftPdfUrl && (
-                <div className={styles.contractDraft__statusControls}>
-                  <button
-                    type="button"
-                    className={`${styles.contractDraft__objectBorderToggle} ${
-                      showContractObjectBorders
-                        ? styles["contractDraft__objectBorderToggle--active"]
-                        : ""
-                    }`}
-                    role="switch"
-                    aria-checked={showContractObjectBorders}
-                    onClick={() => setShowContractObjectBorders((current) => !current)}
-                  >
-                    <span>Show Object borders</span>
-                    <span className={styles.contractDraft__objectBorderToggleTrack}>
-                      <span className={styles.contractDraft__objectBorderToggleThumb} />
-                    </span>
-                  </button>
-                  <span className={styles.contractDraft__pageIndicator}>
-                    Page {contractDraftStatusActivePage} of {contractDraftStatusPageCount}
+              <div className={styles.contractDraft__statusControls}>
+                <button
+                  type="button"
+                  className={`${styles.contractDraft__objectBorderToggle} ${
+                    showContractObjectBorders
+                      ? styles["contractDraft__objectBorderToggle--active"]
+                      : ""
+                  }`}
+                  role="switch"
+                  aria-checked={showContractObjectBorders}
+                  onClick={() => setShowContractObjectBorders((current) => !current)}
+                >
+                  <span>Show Object borders</span>
+                  <span className={styles.contractDraft__objectBorderToggleTrack}>
+                    <span className={styles.contractDraft__objectBorderToggleThumb} />
                   </span>
-                </div>
-              )}
+                </button>
+                <details className={styles.contractDraft__pageIndicator}>
+                  <summary aria-label="Choose PDF page">
+                    <span>
+                      Page {contractDraftStatusActivePage} of {contractDraftStatusPageCount}
+                    </span>
+                    <ChevronDown size={13} aria-hidden="true" />
+                  </summary>
+                  <div className={styles.contractDraft__pageMenu} role="menu">
+                    {Array.from(
+                      { length: contractDraftStatusPageCount },
+                      (_, index) => index + 1,
+                    ).map((pageNumber) => (
+                      <button
+                        key={pageNumber}
+                        type="button"
+                        role="menuitem"
+                        aria-current={
+                          pageNumber === contractDraftStatusActivePage ? "page" : undefined
+                        }
+                        onClick={(event) => {
+                          setContractTemplateActivePage(pageNumber);
+                          setContractPdfPageRequest({
+                            page: pageNumber,
+                            requestId: Date.now(),
+                          });
+                          event.currentTarget.closest("details")?.removeAttribute("open");
+                        }}
+                      >
+                        Page {pageNumber}
+                      </button>
+                    ))}
+                  </div>
+                </details>
+              </div>
             </div>
           )}
 
           {isLoadingData ? (
             <AdminFormSkeleton fields={6} />
           ) : (
-            <div className={styles.contractDraft__layout}>
-              <aside className={styles.contractDraft__panel}>
+            <div
+              className={`${styles.contractDraft__layout} ${
+                contractDraftPdfUrl && contractTemplateFields.length === 0
+                  ? styles["contractDraft__layout--documentOnly"]
+                  : ""
+              }`}
+            >
+              {(!contractDraftPdfUrl || contractTemplateFields.length > 0) && (
+                <aside className={styles.contractDraft__panel}>
                 {!contractDraftPdfUrl ? (
                   <div className={styles.contractDraft__documentFields}>
                     <label
@@ -7797,7 +8375,10 @@ export default function AdminApp() {
                                   }
                                 }}
                               >
-                                <span className={styles.contractDraft__objectItemIcon}>
+                                <span
+                                  className={styles.contractDraft__objectItemIcon}
+                                  style={{ backgroundColor: getContractFieldAccentColor(field) }}
+                                >
                                   {field.type === "textbox" ? (
                                     <MessageSquare size={14} />
                                   ) : field.type === "signature" ? (
@@ -7935,22 +8516,49 @@ export default function AdminApp() {
                         <div className={styles.contractsFieldEditor__header}>
                           <div>
                             <span>Selected object</span>
-                            <strong>
-                              {selectedContractField.locked ? "Locked " : ""}
-                              {selectedContractField.type === "textbox"
-                                ? "Fillable textbox"
-                                : selectedContractField.type === "signature" &&
-                                    (selectedContractField.drawingDataUrl ||
-                                      selectedContractField.imageUrl)
-                                  ? "Signature drawing"
-                                  : getContractFieldTypeLabel(selectedContractField) === "Eraser"
-                                    ? "Eraser stroke"
-                                : getContractFieldTypeLabel(selectedContractField)}
-                            </strong>
+                            <input
+                              className={styles.contractDraft__selectedObjectName}
+                              type="text"
+                              aria-label="Selected object name"
+                              value={
+                                selectedContractField.objectLabel ??
+                                getContractFieldDefaultObjectLabel(
+                                  selectedContractField,
+                                  Math.max(0, selectedContractFieldIndex),
+                                )
+                              }
+                              onChange={(event) =>
+                                updateSelectedContractField({ objectLabel: event.target.value })
+                              }
+                              onBlur={(event) => {
+                                if (event.target.value.trim()) return;
+                                updateSelectedContractField({
+                                  objectLabel: getContractFieldDefaultObjectLabel(
+                                    selectedContractField,
+                                    Math.max(0, selectedContractFieldIndex),
+                                  ),
+                                });
+                              }}
+                            />
                           </div>
-                          <button type="button" onClick={deleteSelectedContractField}>
-                            <Trash2 size={13} />
-                          </button>
+                          <span
+                            className={styles.contractDraft__selectedObjectIcon}
+                            aria-hidden="true"
+                          >
+                            {selectedContractField.type === "textbox" ? (
+                              <MessageSquare size={18} />
+                            ) : selectedContractField.type === "signature" ? (
+                              <Pencil size={18} />
+                            ) : selectedContractField.type === "image" ? (
+                              <ImagePlus size={18} />
+                            ) : getContractFieldTypeLabel(selectedContractField) === "Eraser" ? (
+                              <Eraser size={18} />
+                            ) : selectedContractField.type === "draw" ? (
+                              <Brush size={18} />
+                            ) : (
+                              <Type size={18} />
+                            )}
+                          </span>
                         </div>
                         <div className={styles.contractDraft__selectedEditorContent}>
                           <label className={styles.projectManager__field}>
@@ -7985,7 +8593,7 @@ export default function AdminApp() {
                                       })
                                     }
                                   >
-                                    Remove sender signature
+                                    Remove signature
                                   </button>
                                 </div>
                               ) : (
@@ -8199,7 +8807,15 @@ export default function AdminApp() {
                             (selectedContractField.type === "signature" &&
                               !selectedContractField.drawingDataUrl &&
                               !selectedContractField.imageUrl)) && (
-                            <label className={styles.projectManager__flag}>
+                            <label className={styles.contractDraft__requiredSwitch}>
+                              <span className={styles.contractDraft__requiredSwitchCopy}>
+                                <strong>Required field</strong>
+                                <small>
+                                  {selectedContractField.type === "signature"
+                                    ? "The recipient must add a signature before saving."
+                                    : "The recipient must fill this textbox before saving."}
+                                </small>
+                              </span>
                               <input
                                 type="checkbox"
                                 checked={selectedContractField.required}
@@ -8207,13 +8823,11 @@ export default function AdminApp() {
                                   updateSelectedContractField({ required: event.target.checked })
                                 }
                               />
-                              <span>
-                                <strong>Required field</strong>
-                                <small>
-                                  {selectedContractField.type === "signature"
-                                    ? "The recipient must add a signature before saving."
-                                    : "The recipient must fill this textbox before saving."}
-                                </small>
+                              <span
+                                className={styles.contractDraft__requiredSwitchTrack}
+                                aria-hidden="true"
+                              >
+                                <span className={styles.contractDraft__requiredSwitchThumb} />
                               </span>
                             </label>
                           )}
@@ -8222,7 +8836,8 @@ export default function AdminApp() {
                     )}
                   </div>
                 )}
-              </aside>
+                </aside>
+              )}
 
               <section className={styles.contractDraft__pdfStage}>
                 <div ref={contractPdfStageRef} className={styles.contractDraft__pdfViewport}>
@@ -8255,6 +8870,7 @@ export default function AdminApp() {
                   onPageCountChange={setContractTemplatePageCount}
                   onImageUploadRequest={requestContractImageObjectUpload}
                   showObjectBorders={showContractObjectBorders}
+                  scrollToPageRequest={contractPdfPageRequest}
                   zoom={contractPdfZoom}
                   onFieldDrop={(type, position) => createContractField(type, position)}
                   drawTool={
@@ -8281,7 +8897,9 @@ export default function AdminApp() {
                       type="button"
                       aria-label="Zoom in"
                       disabled={contractPdfZoom >= 300}
-                      onClick={() => setContractPdfZoom((current) => Math.min(300, current + 10))}
+                      onClick={() =>
+                        updateContractPdfZoom((current) => Math.min(300, current + 10))
+                      }
                     >
                       <Plus size={14} />
                     </button>
@@ -8290,7 +8908,7 @@ export default function AdminApp() {
                       aria-label="Zoom out"
                       disabled={contractPdfZoom <= contractPdfFitZoom}
                       onClick={() =>
-                        setContractPdfZoom((current) =>
+                        updateContractPdfZoom((current) =>
                           Math.max(contractPdfFitZoom, current - 10),
                         )
                       }
@@ -8307,7 +8925,7 @@ export default function AdminApp() {
                       <div className={styles.contractDraft__zoomMenu}>
                         <button
                           type="button"
-                          onClick={() => setContractPdfZoom(contractPdfFitZoom)}
+                          onClick={() => updateContractPdfZoom(() => contractPdfFitZoom)}
                         >
                           Fit to Screen
                         </button>
@@ -8315,7 +8933,9 @@ export default function AdminApp() {
                           <button
                             key={value}
                             type="button"
-                            onClick={() => setContractPdfZoom(Math.max(contractPdfFitZoom, value))}
+                            onClick={() =>
+                              updateContractPdfZoom(() => Math.max(contractPdfFitZoom, value))
+                            }
                           >
                             {value}%
                           </button>
@@ -8327,6 +8947,194 @@ export default function AdminApp() {
               </section>
             </div>
           )}
+          {isSigningFlowOpen && (
+            <div className={styles.signingFlow} role="dialog" aria-modal="true" aria-labelledby="signing-flow-title">
+              <button
+                type="button"
+                className={styles.signingFlow__backdrop}
+                aria-label="Close signing dialog"
+                onClick={closeSigningFlow}
+              />
+              <section className={styles.signingFlow__panel}>
+                <div className={styles.signingFlow__glow} aria-hidden="true" />
+                <header className={styles.signingFlow__header}>
+                  <span className={styles.signingFlow__brand}>
+                    <span className={styles.signingFlow__brandMark}>
+                      <img src={writlyLoginLogo} alt="" />
+                    </span>
+                    Writly
+                  </span>
+                  <button type="button" onClick={closeSigningFlow} aria-label="Close">
+                    <X size={18} />
+                  </button>
+                </header>
+
+                {signingFlowStep === "choice" && (
+                  <div className={styles.signingFlow__content}>
+                    <span className={styles.signingFlow__eyebrow}>Your signature is ready</span>
+                    <h2 id="signing-flow-title">Who needs to sign next?</h2>
+                    <p>
+                      Download your completed copy now, or invite other people to add their
+                      signatures to this document.
+                    </p>
+                    <div className={styles.signingFlow__choiceGrid}>
+                      <button
+                        type="button"
+                        className={styles.signingFlow__choice}
+                        onClick={() => setSigningFlowStep("invite")}
+                      >
+                        <span className={styles.signingFlow__choiceIcon}><UsersRound size={22} /></span>
+                        <strong>Ask people to sign</strong>
+                        <small>Add recipients and follow their progress.</small>
+                        <ChevronRight size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.signingFlow__choice}
+                        disabled={contractTemplateSaving || isContractFinalizing}
+                        onClick={() => {
+                          void (async () => {
+                            const finalizedTemplate =
+                              await finalizeContractTemplateDraft();
+                            if (!finalizedTemplate) return;
+                            await exportContractPdf("download");
+                            setIsSigningFlowOpen(false);
+                            setCompletedContractTemplateId(null);
+                            exitContractDraft();
+                          })();
+                        }}
+                      >
+                        <span className={styles.signingFlow__choiceIcon}><Download size={22} /></span>
+                        <strong>Just download</strong>
+                        <small>No other signatures are required.</small>
+                        <ChevronRight size={18} />
+                      </button>
+                    </div>
+                    <div className={styles.signingFlow__security}>
+                      <Shield size={15} />
+                      Signatures already placed in the document stay visible and locked.
+                    </div>
+                  </div>
+                )}
+
+                {signingFlowStep === "invite" && (
+                  <div className={styles.signingFlow__content}>
+                    <button type="button" className={styles.signingFlow__back} onClick={() => setSigningFlowStep("choice")}>
+                      <ChevronLeft size={15} /> Back
+                    </button>
+                    <span className={styles.signingFlow__eyebrow}>Invite signers</span>
+                    <h2 id="signing-flow-title">Add everyone who needs to sign</h2>
+                    <p>Each person will receive their own secure link to this document.</p>
+                    <div className={styles.signingFlow__emailComposer}>
+                      <Mail size={18} />
+                      <input
+                        type="email"
+                        value={signerEmailDraft}
+                        placeholder="name@company.com"
+                        aria-label="Signer email"
+                        onChange={(event) => {
+                          setSignerEmailDraft(event.target.value);
+                          setSignerEmailError("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            addSignerEmail();
+                          }
+                        }}
+                      />
+                      <button type="button" onClick={addSignerEmail}><Plus size={16} /> Add</button>
+                    </div>
+                    {signerEmailError && <p className={styles.signingFlow__error}>{signerEmailError}</p>}
+                    <div className={styles.signingFlow__recipientList}>
+                      {signerEmails.length === 0 ? (
+                        <div className={styles.signingFlow__empty}>
+                          <UsersRound size={22} />
+                          <span>Your signing list is empty</span>
+                          <small>Add at least one valid email address.</small>
+                        </div>
+                      ) : signerEmails.map((email, index) => (
+                        <div className={styles.signingFlow__recipient} key={email}>
+                          <span className={styles.signingFlow__avatar}>{email.slice(0, 1).toUpperCase()}</span>
+                          <span><strong>{email}</strong><small>Signer {index + 1} · Pending invitation</small></span>
+                          <button
+                            type="button"
+                            aria-label={`Remove ${email}`}
+                            onClick={() => setSignerEmails((current) => current.filter((item) => item !== email))}
+                          >
+                            <X size={15} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <footer className={styles.signingFlow__footer}>
+                      <span>{signerEmails.length} {signerEmails.length === 1 ? "recipient" : "recipients"}</span>
+                      <button
+                        type="button"
+                        className={styles.signingFlow__primary}
+                        disabled={
+                          signerEmails.length === 0 ||
+                          contractTemplateSaving ||
+                          isContractFinalizing ||
+                          isSigningInvitationsSubmitting
+                        }
+                        onClick={() => {
+                          void (async () => {
+                            const submitted = await submitSigningInvitations();
+                            if (!submitted) return;
+                            setSigningFlowStep("tracking");
+                          })();
+                        }}
+                      >
+                        <Send size={16} />
+                        {contractTemplateSaving ||
+                        isContractFinalizing ||
+                        isSigningInvitationsSubmitting
+                          ? "Submitting..."
+                          : "Send invitations"}
+                      </button>
+                    </footer>
+                  </div>
+                )}
+
+                {signingFlowStep === "tracking" && (
+                  <div className={styles.signingFlow__content}>
+                    <span className={styles.signingFlow__successIcon}><CheckCircle2 size={26} /></span>
+                    <span className={styles.signingFlow__eyebrow}>Invitations ready</span>
+                    <h2 id="signing-flow-title">Waiting for others to sign</h2>
+                    <p>
+                      The final download becomes available after every person below marks the
+                      document as done.
+                    </p>
+                    <div className={styles.signingFlow__progress}>
+                      <span><strong>1</strong> of <strong>{signerEmails.length + 1}</strong> completed</span>
+                      <div><span style={{ width: `${100 / (signerEmails.length + 1)}%` }} /></div>
+                    </div>
+                    <div className={styles.signingFlow__recipientList}>
+                      <div className={`${styles.signingFlow__recipient} ${styles["signingFlow__recipient--done"]}`}>
+                        <span className={styles.signingFlow__avatar}><CheckCircle2 size={17} /></span>
+                        <span><strong>You</strong><small>Document creator · Signed</small></span>
+                        <BadgeCheck size={18} />
+                      </div>
+                      {signerEmails.map((email) => (
+                        <div className={styles.signingFlow__recipient} key={email}>
+                          <span className={styles.signingFlow__avatar}>{email.slice(0, 1).toUpperCase()}</span>
+                          <span><strong>{email}</strong><small>Waiting for signature</small></span>
+                          <span className={styles.signingFlow__pendingDot} />
+                        </div>
+                      ))}
+                    </div>
+                    <footer className={styles.signingFlow__footer}>
+                      <span>Download unlocks when everyone is done</span>
+                      <button type="button" className={styles.signingFlow__primary} onClick={closeSigningFlow}>
+                        Done
+                      </button>
+                    </footer>
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
         </main>
       </div>
     );
@@ -8334,6 +9142,7 @@ export default function AdminApp() {
 
   return (
     <div className={`${styles.admin} ${theme === "dark" ? styles["admin--dark"] : ""}`}>
+      {documentChooserDialog}
       {sessionExpiredDialog}
       {adminError?.scope === "global" && (
         <div className={styles.adminErrorOverlay}>
@@ -8554,7 +9363,7 @@ export default function AdminApp() {
                     <article className={styles.dashboardPanel}>
                       <div className={styles.dashboardPanel__header}>
                         <div>
-                          <span>Admin Login Logs</span>
+                          <span>User Login Logs</span>
                           <h3>Recent visits</h3>
                         </div>
                         <MonitorSmartphone size={18} />
@@ -8562,7 +9371,7 @@ export default function AdminApp() {
                       {loginLogs.length === 0 ? (
                         <AdminEmptyState
                           title="No login logs yet"
-                          message="Successful admin logins will be listed here."
+                          message="Successful user logins will be listed here."
                         />
                       ) : (
                         <div className={styles.dashboardList}>
@@ -8859,16 +9668,16 @@ export default function AdminApp() {
             <section className={styles.panel}>
               <div className={styles.panel__header}>
                 <h2>Account Requests</h2>
-                <p>Approve or reject pending admin signup requests.</p>
+                <p>Approve or reject pending user signup requests.</p>
               </div>
               {renderScopedError("requests")}
               {requestsNotice && <p className={styles.admin__notice}>{requestsNotice}</p>}
               {isLoadingData ? (
                 <AdminTableSkeleton rows={3} />
-              ) : pendingAdmins.length === 0 ? (
+              ) : pendingUsers.length === 0 ? (
                 <AdminEmptyState
                   title="No account requests"
-                  message="There are no pending admin signup requests to review right now."
+                  message="There are no pending user signup requests to review right now."
                 />
               ) : (
                 <>
@@ -8880,14 +9689,14 @@ export default function AdminApp() {
                       ariaLabel="Search account requests"
                     />
                   </div>
-                  {visiblePendingAdmins.length === 0 ? (
+                  {visiblePendingUsers.length === 0 ? (
                     <AdminEmptyState
                       title="No matching requests"
                       message="No account requests match your current search."
                     />
                   ) : (
                     <div className={styles.table}>
-                      {visiblePendingAdmins.map((request) => (
+                      {visiblePendingUsers.map((request) => (
                         <article key={request.id} className={styles.table__row}>
                           <div>
                             <h4>{request.name}</h4>
@@ -8901,7 +9710,7 @@ export default function AdminApp() {
                               className={styles.table__actionApprove}
                               disabled={Boolean(requestProcessingId)}
                               onClick={() => {
-                                void approvePendingAdmin(request.id);
+                                void approvePendingUser(request.id);
                               }}
                             >
                               {requestProcessingId === request.id ? "Approving..." : "Approve"}
@@ -8911,7 +9720,7 @@ export default function AdminApp() {
                               className={styles.table__actionReject}
                               disabled={Boolean(requestProcessingId)}
                               onClick={() => {
-                                void rejectPendingAdmin(request.id);
+                                void rejectPendingUser(request.id);
                               }}
                             >
                               {requestProcessingId === request.id ? "Rejecting..." : "Reject"}
@@ -10771,8 +11580,11 @@ export default function AdminApp() {
           {activeSection === "contracts" && (
             <section className={styles.panel}>
               <div className={styles.panel__header}>
-                <h2>Contracts</h2>
-                <p>Create reusable contract templates, generate signed links, and send them to recipients.</p>
+                <h2>Documents</h2>
+                <p>
+                  Create reusable PDF templates, place text and signature fields, and send
+                  each document by recipient link or email.
+                </p>
               </div>
               {renderScopedError("contracts")}
               {contractsNotice && <p className={styles.admin__notice}>{contractsNotice}</p>}
@@ -10789,7 +11601,7 @@ export default function AdminApp() {
                       value={contractSearch}
                       onChange={setContractSearch}
                       placeholder="Search title, recipient, template, or status"
-                      ariaLabel="Search contracts"
+                      ariaLabel="Search documents"
                     />
                     <button
                       type="button"
@@ -10797,7 +11609,7 @@ export default function AdminApp() {
                       onClick={() => openContractDraft()}
                     >
                       <Plus size={14} />
-                      Draft Contract
+                      Draft Document
                     </button>
                   </div>
 
@@ -10815,21 +11627,39 @@ export default function AdminApp() {
                             <h4>{template.name}</h4>
                             <p>{template.title}</p>
                           </div>
-                          <span>{template.contractCount} contracts</span>
+                          <span>
+                            {template.isFinalized
+                              ? "Completed · Read only"
+                              : `${template.contractCount} documents`}
+                          </span>
                           <button
                             type="button"
-                            aria-label={`Open ${template.name} in contract draft`}
-                            title="Open draft"
-                            onClick={() => openContractDraft(template)}
+                            aria-label={
+                              template.isFinalized
+                                ? `View completed document ${template.name}`
+                                : `Open ${template.name} in document draft`
+                            }
+                            title={template.isFinalized ? "View completed document" : "Open draft"}
+                            onClick={() => {
+                              if (template.isFinalized) {
+                                window.open(
+                                  template.pdfDocument.fileUrl,
+                                  "_blank",
+                                  "noopener,noreferrer",
+                                );
+                                return;
+                              }
+                              openContractDraft(template);
+                            }}
                           >
-                            <Pencil size={13} />
+                            {template.isFinalized ? <Lock size={13} /> : <Pencil size={13} />}
                           </button>
                           <button
                             type="button"
                             disabled={contractTemplateDeletingId === template.id}
                             onClick={() => {
                               const confirmed = window.confirm(
-                                `Delete contract template "${template.name}"? Existing contracts will keep their content.`,
+                                `Delete document template "${template.name}"? Existing documents will keep their content.`,
                               );
                               if (!confirmed) return;
                               void deleteContractTemplate(template.id);
@@ -10844,8 +11674,8 @@ export default function AdminApp() {
 
                   <div className={styles.contractsListHeader}>
                     <div>
-                      <span>Contract links</span>
-                      <strong>Generated contracts</strong>
+                      <span>Document links</span>
+                      <strong>Generated documents</strong>
                     </div>
                     <span className={styles.contractsToolbarCount}>
                       {visibleContracts.length} of {contracts.length} shown
@@ -10854,11 +11684,11 @@ export default function AdminApp() {
 
                   {visibleContracts.length === 0 ? (
                     <AdminEmptyState
-                      title={contracts.length === 0 ? "No contracts yet" : "No matching contracts"}
+                      title={contracts.length === 0 ? "No documents yet" : "No matching documents"}
                       message={
                         contracts.length === 0
-                          ? "Create a contract link from a template or blank draft."
-                          : "No contracts match your current search."
+                          ? "Create a document link from a template or blank draft."
+                          : "No documents match your current search."
                       }
                     />
                   ) : (
@@ -10875,7 +11705,7 @@ export default function AdminApp() {
                                 {contract.recipientEmail ? ` / ${contract.recipientEmail}` : ""}
                               </p>
                               <p>
-                                {contract.template?.name ?? "Blank contract"} / Created{" "}
+                                {contract.template?.name ?? "Blank document"} / Created{" "}
                                 {new Date(contract.createdAt).toLocaleString()}
                               </p>
                               <p>
@@ -10923,7 +11753,7 @@ export default function AdminApp() {
                                 disabled={isSending || isDeleting}
                                 onClick={() => {
                                   const confirmed = window.confirm(
-                                    `Delete contract "${contract.title}"?`,
+                                    `Delete document "${contract.title}"?`,
                                   );
                                   if (!confirmed) return;
                                   void deleteContract(contract.id);

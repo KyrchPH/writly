@@ -68,7 +68,7 @@ const tokenSchema = z
   .trim()
   .min(40)
   .max(240)
-  .regex(/^[0-9a-fA-F-]{36}\.[A-Za-z0-9_-]+$/, "Invalid contract token.");
+  .regex(/^[0-9a-fA-F-]{36}\.[A-Za-z0-9_-]+$/, "Invalid document token.");
 
 type ContractField = z.infer<typeof contractFieldSchema>;
 
@@ -155,6 +155,7 @@ const serializeTemplate = (template: {
   fields: unknown;
   createdAt: Date;
   updatedAt: Date;
+  isFinalized?: boolean;
   _count?: {
     contracts: number;
   };
@@ -173,6 +174,7 @@ const serializeTemplate = (template: {
   contractCount: template._count?.contracts ?? 0,
   createdAt: template.createdAt,
   updatedAt: template.updatedAt,
+  isFinalized: template.isFinalized === true,
 });
 
 const serializeContract = (contract: {
@@ -261,7 +263,7 @@ export const listAdminContracts: RequestHandler = async (_req, res) => {
 export const createAdminContractTemplate: RequestHandler = async (req, res) => {
   const parsed = contractTemplateSchema.safeParse(req.body);
   if (!parsed.success) {
-    sendValidationError(res, "Invalid contract template payload.", parsed.error);
+    sendValidationError(res, "Invalid document template payload.", parsed.error);
     return;
   }
 
@@ -276,6 +278,7 @@ export const createAdminContractTemplate: RequestHandler = async (req, res) => {
       pdfMimeType: parsed.data.pdfDocument.mimeType,
       pageCount: parsed.data.pageCount,
       fields,
+      isFinalized: false,
     },
     include: {
       _count: {
@@ -287,16 +290,87 @@ export const createAdminContractTemplate: RequestHandler = async (req, res) => {
   res.status(201).json({ data: serializeTemplate(template) });
 };
 
-export const deleteAdminContractTemplate: RequestHandler = async (req, res) => {
+export const updateAdminContractTemplate: RequestHandler = async (req, res) => {
   const id = normalizeRouteParam(req.params.id);
   if (!id) {
-    res.status(400).json({ message: "Invalid contract template id." });
+    res.status(400).json({ message: "Invalid document template id." });
+    return;
+  }
+
+  const parsed = contractTemplateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    sendValidationError(res, "Invalid document template payload.", parsed.error);
     return;
   }
 
   const existing = await db.contractTemplate.findUnique({ where: { id } });
   if (!existing) {
-    res.status(404).json({ message: "Contract template not found." });
+    res.status(404).json({ message: "Document template not found." });
+    return;
+  }
+  if (existing.isFinalized === true) {
+    res.status(409).json({ message: "Completed documents cannot be edited." });
+    return;
+  }
+
+  const template = await db.contractTemplate.update({
+    where: { id },
+    data: {
+      name: parsed.data.name,
+      title: parsed.data.title,
+      pdfFilePath: parsed.data.pdfDocument.filePath,
+      pdfFileUrl: parsed.data.pdfDocument.fileUrl,
+      pdfFileName: parsed.data.pdfDocument.fileName,
+      pdfMimeType: parsed.data.pdfDocument.mimeType,
+      pageCount: parsed.data.pageCount,
+      fields: normalizeFields(parsed.data.fields),
+    },
+    include: {
+      _count: {
+        select: { contracts: true },
+      },
+    },
+  });
+
+  res.status(200).json({ data: serializeTemplate(template) });
+};
+
+export const finalizeAdminContractTemplate: RequestHandler = async (req, res) => {
+  const id = normalizeRouteParam(req.params.id);
+  if (!id) {
+    res.status(400).json({ message: "Invalid document template id." });
+    return;
+  }
+
+  const existing = await db.contractTemplate.findUnique({ where: { id } });
+  if (!existing) {
+    res.status(404).json({ message: "Document template not found." });
+    return;
+  }
+
+  const template = await db.contractTemplate.update({
+    where: { id },
+    data: { isFinalized: true },
+    include: {
+      _count: {
+        select: { contracts: true },
+      },
+    },
+  });
+
+  res.status(200).json({ data: serializeTemplate(template) });
+};
+
+export const deleteAdminContractTemplate: RequestHandler = async (req, res) => {
+  const id = normalizeRouteParam(req.params.id);
+  if (!id) {
+    res.status(400).json({ message: "Invalid document template id." });
+    return;
+  }
+
+  const existing = await db.contractTemplate.findUnique({ where: { id } });
+  if (!existing) {
+    res.status(404).json({ message: "Document template not found." });
     return;
   }
 
@@ -307,7 +381,7 @@ export const deleteAdminContractTemplate: RequestHandler = async (req, res) => {
 export const createAdminContract: RequestHandler = async (req, res) => {
   const parsed = createContractSchema.safeParse(req.body);
   if (!parsed.success) {
-    sendValidationError(res, "Invalid contract payload.", parsed.error);
+    sendValidationError(res, "Invalid document payload.", parsed.error);
     return;
   }
 
@@ -316,7 +390,7 @@ export const createAdminContract: RequestHandler = async (req, res) => {
   });
 
   if (!template) {
-    res.status(404).json({ message: "Contract template not found." });
+    res.status(404).json({ message: "Document template not found." });
     return;
   }
 
@@ -350,7 +424,7 @@ export const createAdminContract: RequestHandler = async (req, res) => {
 export const sendAdminContractEmail: RequestHandler = async (req, res) => {
   const id = normalizeRouteParam(req.params.id);
   if (!id) {
-    res.status(400).json({ message: "Invalid contract id." });
+    res.status(400).json({ message: "Invalid document id." });
     return;
   }
 
@@ -366,13 +440,13 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
     },
   });
   if (!contract) {
-    res.status(404).json({ message: "Contract not found." });
+    res.status(404).json({ message: "Document not found." });
     return;
   }
 
   if (!contract.recipientEmail) {
     res.status(400).json({
-      message: "Add a recipient email before sending this contract.",
+      message: "Add a recipient email before sending this document.",
     });
     return;
   }
@@ -391,7 +465,7 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
       emailDelivery: {
         status: "failed",
         message:
-          error instanceof Error ? error.message : "Failed to send contract email.",
+          error instanceof Error ? error.message : "Failed to send document email.",
       },
     });
     return;
@@ -421,13 +495,13 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
 export const deleteAdminContract: RequestHandler = async (req, res) => {
   const id = normalizeRouteParam(req.params.id);
   if (!id) {
-    res.status(400).json({ message: "Invalid contract id." });
+    res.status(400).json({ message: "Invalid document id." });
     return;
   }
 
   const existing = await db.contract.findUnique({ where: { id } });
   if (!existing) {
-    res.status(404).json({ message: "Contract not found." });
+    res.status(404).json({ message: "Document not found." });
     return;
   }
 
@@ -439,13 +513,13 @@ export const getPublicContract: RequestHandler = async (req, res) => {
   const token = normalizeRouteParam(req.params.token);
   const id = token ? getContractIdFromToken(token) : null;
   if (!id) {
-    res.status(404).json({ message: "Contract link unavailable." });
+    res.status(404).json({ message: "Document link unavailable." });
     return;
   }
 
   const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) {
-    res.status(404).json({ message: "Contract link unavailable." });
+    res.status(404).json({ message: "Document link unavailable." });
     return;
   }
 
@@ -482,19 +556,19 @@ export const submitPublicContract: RequestHandler = async (req, res) => {
   const token = normalizeRouteParam(req.params.token);
   const id = token ? getContractIdFromToken(token) : null;
   if (!id) {
-    res.status(404).json({ message: "Contract link unavailable." });
+    res.status(404).json({ message: "Document link unavailable." });
     return;
   }
 
   const parsed = submitContractSchema.safeParse(req.body);
   if (!parsed.success) {
-    sendValidationError(res, "Invalid contract field values.", parsed.error);
+    sendValidationError(res, "Invalid document field values.", parsed.error);
     return;
   }
 
   const contract = await db.contract.findUnique({ where: { id } });
   if (!contract) {
-    res.status(404).json({ message: "Contract link unavailable." });
+    res.status(404).json({ message: "Document link unavailable." });
     return;
   }
 

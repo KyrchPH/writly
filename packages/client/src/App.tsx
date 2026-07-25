@@ -1463,7 +1463,7 @@ export function ContractShareApp() {
     let cancelled = false;
     const loadContract = async () => {
       if (!token) {
-        setError("This contract link is invalid.");
+        setError("This document link is invalid.");
         setIsLoading(false);
         return;
       }
@@ -1477,7 +1477,7 @@ export function ContractShareApp() {
           message?: string;
         };
         if (!response.ok || !payload.data) {
-          throw new Error(payload.message || "This contract link is unavailable.");
+          throw new Error(payload.message || "This document link is unavailable.");
         }
         if (!cancelled) {
           setContract(payload.data);
@@ -1489,7 +1489,7 @@ export function ContractShareApp() {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "This contract link is unavailable.",
+              : "This document link is unavailable.",
           );
         }
       } finally {
@@ -1526,7 +1526,7 @@ export function ContractShareApp() {
         message?: string;
       };
       if (!response.ok) {
-        throw new Error(payload.message || "Failed to save contract fields.");
+        throw new Error(payload.message || "Failed to save document fields.");
       }
       setFieldValues(payload.data?.values ?? fieldValues);
       setContract((prev) =>
@@ -1538,10 +1538,10 @@ export function ContractShareApp() {
             }
           : prev,
       );
-      setNotice("Your contract fields have been saved.");
+      setNotice("Your document fields have been saved.");
     } catch (submitError) {
       setError(
-        submitError instanceof Error ? submitError.message : "Failed to save contract fields.",
+        submitError instanceof Error ? submitError.message : "Failed to save document fields.",
       );
     } finally {
       setIsSubmitting(false);
@@ -1556,8 +1556,8 @@ export function ContractShareApp() {
             <FileText size={24} />
           </span>
           <div>
-            <p className={styles.reviewPage__eyebrow}>Contract</p>
-            <h1>{contract?.title ?? "Contract Review"}</h1>
+            <p className={styles.reviewPage__eyebrow}>Document</p>
+            <h1>{contract?.title ?? "Document Review"}</h1>
           </div>
         </div>
 
@@ -1570,8 +1570,8 @@ export function ContractShareApp() {
         ) : error || !contract ? (
           <div className={`${styles.reviewPage__status} ${styles["reviewPage__status--error"]}`}>
             <AlertTriangle size={32} />
-            <h2>Contract link unavailable</h2>
-            <p>{error || "This contract link is unavailable."}</p>
+            <h2>Document link unavailable</h2>
+            <p>{error || "This document link is unavailable."}</p>
           </div>
         ) : (
           <form className={styles.contractPage__document} onSubmit={submitContract}>

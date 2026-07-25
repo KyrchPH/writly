@@ -9,7 +9,7 @@ export const getDashboardStats: RequestHandler = async (req, res) => {
     db.certificate.count(),
     db.review.count(),
     userId
-      ? db.adminLoginLog.findMany({
+      ? db.userLoginLog.findMany({
           where: { userId },
           orderBy: { createdAt: "desc" },
           take: 5,

@@ -93,9 +93,14 @@
 }
 
 .app-header__logo {
-  height: 36px;
+  height: 38px;
   width: auto;
-  transition: filter 300ms ease;
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.app-header__logoWrap:hover .app-header__logo {
+  opacity: 0.9;
+  transform: translateY(-1px);
 }
 
 .app-header__searchDesktop {

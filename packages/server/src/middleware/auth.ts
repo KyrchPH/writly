@@ -1,6 +1,8 @@
 import type { RequestHandler } from "express";
-import { db } from "../lib/db.js";
-import { verifyAccessToken } from "../utils/jwt.js";
+import {
+  findUserForFirebaseToken,
+  verifyFirebaseIdToken,
+} from "../lib/user-auth.js";
 
 export const requireAuth: RequestHandler = async (req, res, next) => {
   const header = req.headers.authorization;
@@ -11,12 +13,8 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
 
   const token = header.slice("Bearer ".length).trim();
   try {
-    const payload = verifyAccessToken(token);
-
-    const user = await db.adminUser.findUnique({
-      where: { id: payload.sub },
-      select: { isApproved: true },
-    });
+    const decoded = await verifyFirebaseIdToken(token);
+    const user = await findUserForFirebaseToken(decoded);
     if (!user) {
       res.status(401).json({ message: "Invalid token user." });
       return;
@@ -26,7 +24,11 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
       return;
     }
 
-    req.user = payload;
+    req.user = {
+      sub: user.id,
+      email: user.email,
+      firebaseUid: decoded.uid,
+    };
     next();
   } catch {
     res.status(401).json({ message: "Invalid or expired token." });

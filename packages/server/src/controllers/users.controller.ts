@@ -2,8 +2,8 @@ import type { RequestHandler } from "express";
 import { db } from "../lib/db.js";
 import { normalizeRouteParam } from "./helpers.js";
 
-export const listPendingAdminUsers: RequestHandler = async (_req, res) => {
-  const pendingUsers = await db.adminUser.findMany({
+export const listPendingUsers: RequestHandler = async (_req, res) => {
+  const pendingUsers = await db.user.findMany({
     where: { isApproved: false },
     orderBy: { createdAt: "asc" },
     select: {
@@ -17,7 +17,7 @@ export const listPendingAdminUsers: RequestHandler = async (_req, res) => {
   res.status(200).json({ data: pendingUsers });
 };
 
-export const approveAdminUser: RequestHandler = async (req, res) => {
+export const approveUser: RequestHandler = async (req, res) => {
   const targetId = normalizeRouteParam(req.params.id);
   if (!targetId) {
     res.status(400).json({ message: "Invalid user id." });
@@ -30,7 +30,7 @@ export const approveAdminUser: RequestHandler = async (req, res) => {
     return;
   }
 
-  const existing = await db.adminUser.findUnique({
+  const existing = await db.user.findUnique({
     where: { id: targetId },
     select: {
       id: true,
@@ -52,7 +52,7 @@ export const approveAdminUser: RequestHandler = async (req, res) => {
     return;
   }
 
-  const updated = await db.adminUser.update({
+  const updated = await db.user.update({
     where: { id: targetId },
     data: {
       isApproved: true,
@@ -72,14 +72,14 @@ export const approveAdminUser: RequestHandler = async (req, res) => {
   res.status(200).json({ data: updated });
 };
 
-export const rejectAdminUser: RequestHandler = async (req, res) => {
+export const rejectUser: RequestHandler = async (req, res) => {
   const targetId = normalizeRouteParam(req.params.id);
   if (!targetId) {
     res.status(400).json({ message: "Invalid user id." });
     return;
   }
 
-  const existing = await db.adminUser.findUnique({
+  const existing = await db.user.findUnique({
     where: { id: targetId },
     select: { id: true, isApproved: true },
   });
@@ -94,7 +94,7 @@ export const rejectAdminUser: RequestHandler = async (req, res) => {
     return;
   }
 
-  await db.adminUser.delete({
+  await db.user.delete({
     where: { id: targetId },
   });
 

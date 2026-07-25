@@ -4,6 +4,13 @@ import { z } from "zod";
 import { env, isEmailConfigured } from "../config/env.js";
 import { sendPasswordResetEmail } from "../lib/mailer.js";
 import { db } from "../lib/db.js";
+import {
+  getDeviceName,
+  normalizeEmail,
+  recordUserLogin,
+  syncUserFromFirebaseToken,
+  verifyFirebaseIdToken,
+} from "../lib/user-auth.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
 import { comparePassword, hashPassword } from "../utils/password.js";
@@ -18,6 +25,10 @@ const signupSchema = z.object({
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+});
+
+const firebaseSessionSchema = z.object({
+  idToken: z.string().min(100),
 });
 
 const googleLoginSchema = z.object({ credential: z.string().min(100) });
@@ -40,36 +51,46 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(8).max(128),
 });
 
-const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const hashResetToken = (token: string) =>
   createHash("sha256").update(`${token}:${env.JWT_SECRET}`).digest("hex");
 
-const getDeviceName = (userAgent?: string) => {
-  if (!userAgent) return "Unknown device";
-  const browser = /Edg\//.test(userAgent)
-    ? "Edge"
-    : /Chrome\//.test(userAgent)
-      ? "Chrome"
-      : /Firefox\//.test(userAgent)
-        ? "Firefox"
-        : /Safari\//.test(userAgent)
-          ? "Safari"
-          : "Browser";
-  const platform = /Windows NT/.test(userAgent)
-    ? "Windows"
-    : /Mac OS X/.test(userAgent)
-      ? "macOS"
-      : /Android/.test(userAgent)
-        ? "Android"
-        : /iPhone|iPad/.test(userAgent)
-          ? "iOS"
-          : /Linux/.test(userAgent)
-            ? "Linux"
-            : "Device";
-  return `${browser} on ${platform}`;
-};
-
 export const authRouter = Router();
+
+authRouter.post("/session", asyncHandler(async (req, res) => {
+  const parsed = firebaseSessionSchema.safeParse(req.body);
+  console.log(parsed);
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid Firebase session payload.",
+      errors: parsed.error.flatten(),
+    });
+    return;
+  }
+
+  const decoded = await verifyFirebaseIdToken(parsed.data.idToken);
+  if (!decoded.email_verified) {
+    res.status(403).json({ message: "Please verify your email before continuing." });
+    return;
+  }
+
+  const user = await syncUserFromFirebaseToken(decoded);
+  if (!user.isApproved) {
+    res.status(403).json({ message: "Account pending admin approval." });
+    return;
+  }
+
+  const userAgent = req.get("user-agent") || undefined;
+  await recordUserLogin(user.id, userAgent);
+
+  res.status(200).json({
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      createdAt: user.createdAt,
+    },
+  });
+}));
 
 authRouter.post("/signup", asyncHandler(async (req, res) => {
   const parsed = signupSchema.safeParse(req.body);
@@ -82,7 +103,7 @@ authRouter.post("/signup", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const existing = await db.adminUser.findUnique({ where: { email } });
+  const existing = await db.user.findUnique({ where: { email } });
   if (existing) {
     res.status(409).json({ message: "Email is already in use." });
     return;
@@ -90,7 +111,7 @@ authRouter.post("/signup", asyncHandler(async (req, res) => {
 
   const passwordHash = await hashPassword(parsed.data.password);
   const now = new Date();
-  const user = await db.adminUser.create({
+  const user = await db.user.create({
     data: {
       name: parsed.data.name.trim(),
       email,
@@ -126,7 +147,7 @@ authRouter.post("/login", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const user = await db.adminUser.findUnique({ where: { email } });
+  const user = await db.user.findUnique({ where: { email } });
   if (!user) {
     res.status(401).json({ message: "Invalid credentials." });
     return;
@@ -144,7 +165,7 @@ authRouter.post("/login", asyncHandler(async (req, res) => {
   }
 
   const userAgent = req.get("user-agent") || undefined;
-  await db.adminLoginLog.create({
+  await db.userLoginLog.create({
     data: {
       userId: user.id,
       deviceName: getDeviceName(userAgent),
@@ -197,11 +218,11 @@ authRouter.post("/google", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(profile.email);
-  let user = await db.adminUser.findUnique({ where: { email } });
+  let user = await db.user.findUnique({ where: { email } });
 
   if (!user) {
     const passwordHash = await hashPassword(randomBytes(32).toString("hex"));
-    user = await db.adminUser.create({
+    user = await db.user.create({
       data: {
         name: (profile.name || profile.given_name || email.split("@")[0]).trim(),
         email,
@@ -218,7 +239,7 @@ authRouter.post("/google", asyncHandler(async (req, res) => {
   }
 
   const userAgent = req.get("user-agent") || undefined;
-  await db.adminLoginLog.create({
+  await db.userLoginLog.create({
     data: { userId: user.id, deviceName: getDeviceName(userAgent), userAgent },
   });
 
@@ -247,7 +268,7 @@ authRouter.post("/forgot-password", asyncHandler(async (req, res) => {
   }
 
   const email = normalizeEmail(parsed.data.email);
-  const user = await db.adminUser.findUnique({ where: { email } });
+  const user = await db.user.findUnique({ where: { email } });
 
   // Return a generic response to avoid account enumeration.
   const genericSuccess = {
@@ -332,7 +353,7 @@ authRouter.post("/reset-password", asyncHandler(async (req, res) => {
   const newPasswordHash = await hashPassword(parsed.data.newPassword);
 
   await db.$transaction([
-    db.adminUser.update({
+    db.user.update({
       where: { id: resetRecord.userId },
       data: { passwordHash: newPasswordHash },
     }),
@@ -356,7 +377,7 @@ authRouter.get("/me", requireAuth, asyncHandler(async (req, res) => {
     return;
   }
 
-  const user = await db.adminUser.findUnique({
+  const user = await db.user.findUnique({
     where: { id: userId },
     select: {
       id: true,

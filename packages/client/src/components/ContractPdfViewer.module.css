@@ -261,7 +261,7 @@
   overflow: hidden;
   color: #111827;
   font-family: Arial, sans-serif;
-  font-size: 7px;
+  font-size: calc(7px * var(--viewer-zoom, 1));
   font-weight: 700;
   line-height: 1;
   opacity: 0.82;
@@ -460,6 +460,27 @@
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
 }
 
+.viewer__inlineTextEditor {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--viewer-field-accent, rgba(37, 99, 235, 0.86));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  line-height: 1.05;
+  resize: none;
+  outline: 2px solid rgba(37, 99, 235, 0.86);
+  outline-offset: 1px;
+}
+
+.viewer__inlineTextEditor:focus {
+  background: transparent;
+  box-shadow: none;
+}
+
 .viewer__signatureInput {
   position: absolute;
   box-sizing: border-box;
@@ -520,34 +541,37 @@
 
 .viewer__signatureDialogBackdrop {
   position: fixed;
-  z-index: 100;
+  z-index: 1000;
   inset: 0;
-  background: rgba(2, 6, 23, 0.72);
+  background: rgba(22, 24, 29, 0.52);
+  backdrop-filter: blur(6px);
   display: grid;
   place-items: center;
   padding: 20px;
 }
 
 .viewer__signatureDialog {
-  width: min(620px, 100%);
-  border: 1px solid rgba(148, 163, 184, 0.32);
-  border-radius: 14px;
-  background: #0f172a;
-  color: #f8fafc;
+  width: min(680px, 100%);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  border: 1px solid #e2e4ea;
+  border-radius: 18px;
+  background: #ffffff;
+  color: #16181d;
   display: grid;
-  gap: 14px;
-  font-family: Arial, sans-serif;
-  font-size: 14px;
+  gap: 16px;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
   font-style: normal;
   font-weight: 400;
   text-align: left;
-  padding: 16px;
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  padding: 22px;
+  box-shadow: 0 28px 80px rgba(22, 24, 29, 0.24);
 }
 
 .viewer__signatureDialogHeader {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
@@ -559,49 +583,82 @@
 
 .viewer__signatureDialogHeader span,
 .viewer__signaturePreview span {
-  color: #94a3b8;
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  color: #6757f5;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .viewer__signatureDialogHeader strong {
-  font-size: 18px;
+  font-size: 22px;
   line-height: 1.2;
+  letter-spacing: -0.025em;
 }
 
-.viewer__signatureDialogHeader button,
-.viewer__signatureDialogActions button {
-  border: 1px solid rgba(148, 163, 184, 0.28);
+.viewer__signatureDialogHeader button {
+  width: 36px;
+  height: 36px;
+  border: 0;
   border-radius: 9px;
-  background: rgba(15, 23, 42, 0.88);
-  color: #f8fafc;
-  min-height: 36px;
-  padding: 0 12px;
+  background: #f1f1f6;
+  color: #6f7480;
+  display: grid;
+  place-items: center;
+  padding: 0;
   cursor: pointer;
-  font-weight: 800;
+  font-family: Arial, sans-serif;
+  font-size: 24px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.viewer__signatureCanvasPanel {
+  overflow: hidden;
+  border: 1px solid #dedfe7;
+  border-radius: 14px;
+  background: #f8f8fb;
+}
+
+.viewer__signatureCanvasHeader {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #e6e7ed;
+}
+
+.viewer__signatureCanvasHeader strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.viewer__signatureCanvasHeader span {
+  color: #7a7f8b;
+  font-size: 11px;
 }
 
 .viewer__signatureCanvas {
   width: 100%;
-  height: 210px;
-  border: 1px dashed rgba(148, 163, 184, 0.5);
-  border-radius: 12px;
+  height: 220px;
+  border: 0;
+  border-radius: 0;
   background:
     linear-gradient(
       to right,
-      transparent calc(50% - 1px),
-      rgba(100, 116, 139, 0.36) calc(50% - 1px),
-      rgba(100, 116, 139, 0.36) calc(50% + 1px),
-      transparent calc(50% + 1px)
+      transparent calc(50% - .5px),
+      #dedfe7 calc(50% - .5px),
+      #dedfe7 calc(50% + .5px),
+      transparent calc(50% + .5px)
     ),
     linear-gradient(
       to bottom,
-      transparent calc(50% - 1px),
-      rgba(100, 116, 139, 0.36) calc(50% - 1px),
-      rgba(100, 116, 139, 0.36) calc(50% + 1px),
-      transparent calc(50% + 1px)
+      transparent calc(50% - .5px),
+      #dedfe7 calc(50% - .5px),
+      #dedfe7 calc(50% + .5px),
+      transparent calc(50% + .5px)
     ),
     #ffffff;
   cursor: crosshair;
@@ -609,16 +666,19 @@
 }
 
 .viewer__signatureHint {
-  margin: -4px 0 0;
-  color: #cbd5e1;
-  font-size: 12px;
-  line-height: 1.45;
+  margin: -2px 0 0;
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: #f5f3ff;
+  color: #625c7e;
+  font-size: 11px;
+  line-height: 1.5;
 }
 
 .viewer__signaturePreview {
-  border: 1px solid rgba(148, 163, 184, 0.26);
+  border: 1px solid #e2e4ea;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.96);
+  background: #ffffff;
   display: grid;
   gap: 8px;
   padding: 10px;
@@ -636,10 +696,10 @@
 
 .viewer__signatureError {
   margin: 0;
-  border: 1px solid rgba(248, 113, 113, 0.34);
+  border: 1px solid #f0b9b9;
   border-radius: 8px;
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
+  background: #fff4f4;
+  color: #a42626;
   padding: 8px 10px;
   font-size: 12px;
 }
@@ -652,23 +712,37 @@
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.viewer__signatureDialogActions button {
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid #d9dce3;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #353943;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .viewer__signatureDialogActions button:hover,
 .viewer__signatureDialogHeader button:hover {
-  background: rgba(30, 41, 59, 0.92);
+  background: #f1f1f6;
 }
 
 .viewer__signatureDialogActions .viewer__signaturePrimaryAction {
-  border-color: rgba(45, 212, 191, 0.52);
-  background: #14b8a6;
-  color: #042f2e;
+  border-color: #6757f5;
+  background: #6757f5;
+  color: #ffffff;
 }
 
 .viewer__signatureDialogActions .viewer__signaturePrimaryAction:hover {
-  background: #2dd4bf;
-  color: #042f2e;
+  background: #5748e4;
+  color: #ffffff;
 }
 
 .viewer__signatureDialogActions .viewer__signaturePrimaryAction:disabled {
@@ -687,10 +761,26 @@
   }
 
   .viewer__signatureDialog {
-    padding: 12px;
+    gap: 13px;
+    padding: 16px;
   }
 
   .viewer__signatureCanvas {
-    height: 170px;
+    height: 190px;
+  }
+
+  .viewer__signatureCanvasHeader {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .viewer__signatureDialogActions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .viewer__signatureDialogActions .viewer__signaturePrimaryAction {
+    grid-column: 1 / -1;
   }
 }

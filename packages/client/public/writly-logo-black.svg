@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="100 200 1054 850"
+     role="img"
+     aria-labelledby="title">
+  <title id="title">Writly logo in black</title>
+  <path d="M 270 716
+           C 174 733, 153 672, 190 597
+           C 250 476, 416 352, 583 292
+           C 676 259, 733 276, 724 336
+           C 714 406, 627 553, 535 704
+           L 433 872
+           C 409 912, 432 937, 467 895
+           L 626 703
+           C 663 658, 696 672, 686 727
+           L 668 831
+           C 660 875, 687 889, 714 845
+           L 855 608
+           C 905 524, 946 462, 964 472
+           C 987 485, 968 548, 943 615
+           L 871 785
+           C 848 839, 879 864, 920 820
+           C 982 754, 1054 706, 1110 686"
+        fill="none"
+        stroke="#000000"
+        stroke-width="92"
+        stroke-linecap="round"
+        stroke-linejoin="round"/>
+</svg>

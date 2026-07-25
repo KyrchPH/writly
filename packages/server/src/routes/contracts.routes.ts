@@ -4,10 +4,12 @@ import {
   createAdminContractTemplate,
   deleteAdminContract,
   deleteAdminContractTemplate,
+  finalizeAdminContractTemplate,
   getPublicContract,
   listAdminContracts,
   sendAdminContractEmail,
   submitPublicContract,
+  updateAdminContractTemplate,
 } from "../controllers/contracts.controller.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/async-handler.js";
@@ -19,6 +21,8 @@ adminContractsRouter.use(requireAuth);
 adminContractsRouter.get("/", asyncHandler(listAdminContracts));
 adminContractsRouter.get("/all", asyncHandler(listAdminContracts));
 adminContractsRouter.post("/templates", asyncHandler(createAdminContractTemplate));
+adminContractsRouter.put("/templates/:id", asyncHandler(updateAdminContractTemplate));
+adminContractsRouter.post("/templates/:id/finalize", asyncHandler(finalizeAdminContractTemplate));
 adminContractsRouter.delete("/templates/:id", asyncHandler(deleteAdminContractTemplate));
 adminContractsRouter.post("/", asyncHandler(createAdminContract));
 adminContractsRouter.post("/:id/send", asyncHandler(sendAdminContractEmail));

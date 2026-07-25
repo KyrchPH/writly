@@ -8,6 +8,7 @@ import {
   type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from "pdfjs-dist";
 import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.mjs?url";
 import styles from "./ContractPdfViewer.module.css";
@@ -53,6 +54,7 @@ type ContractPdfViewerProps = {
   onPageCountChange?: (pageCount: number) => void;
   onImageUploadRequest?: (fieldId: string) => void;
   showObjectBorders?: boolean;
+  scrollToPageRequest?: { page: number; requestId: number } | null;
   onFieldDrop?: (
     type: ContractPdfField["type"],
     position: { page: number; x: number; y: number },
@@ -597,7 +599,7 @@ function SignatureDialog({
     }
   };
 
-  return (
+  return createPortal(
     <div className={styles.viewer__signatureDialogBackdrop} role="presentation">
       <section
         className={styles.viewer__signatureDialog}
@@ -607,28 +609,33 @@ function SignatureDialog({
       >
         <div className={styles.viewer__signatureDialogHeader}>
           <div>
-            <span>Signature</span>
             <strong>{label || "Add your signature"}</strong>
           </div>
-          <button type="button" onClick={onClose}>
-            Close
+          <button type="button" aria-label="Close signature dialog" title="Close" onClick={onClose}>
+            ×
           </button>
         </div>
 
-        <canvas
-          ref={canvasRef}
-          className={styles.viewer__signatureCanvas}
-          width={640}
-          height={220}
-          aria-label="Draw signature"
-          onPointerDown={handleCanvasPointerDown}
-          onPointerMove={handleCanvasPointerMove}
-          onPointerUp={handleCanvasPointerUp}
-          onPointerCancel={handleCanvasPointerUp}
-        />
+        <div className={styles.viewer__signatureCanvasPanel}>
+          <div className={styles.viewer__signatureCanvasHeader}>
+            <strong>Draw your signature</strong>
+            <span>Use your mouse, trackpad, or finger</span>
+          </div>
+          <canvas
+            ref={canvasRef}
+            className={styles.viewer__signatureCanvas}
+            width={640}
+            height={220}
+            aria-label="Draw signature"
+            onPointerDown={handleCanvasPointerDown}
+            onPointerMove={handleCanvasPointerMove}
+            onPointerUp={handleCanvasPointerUp}
+            onPointerCancel={handleCanvasPointerUp}
+          />
+        </div>
         <p className={styles.viewer__signatureHint}>
-          Upload a clear signature photo on a solid background with no shadow. The app will remove
-          the background and convert the handwriting into vector strokes.
+          Prefer a photo? Upload dark handwriting on a plain, well-lit background and Writly will
+          remove the background automatically.
         </p>
 
         {draftValue && (
@@ -648,15 +655,15 @@ function SignatureDialog({
           onChange={handleSignatureUpload}
         />
         <div className={styles.viewer__signatureDialogActions}>
+          <button type="button" onClick={clearCanvas}>
+            Clear
+          </button>
           <button
             type="button"
             disabled={isProcessingUpload}
             onClick={() => fileInputRef.current?.click()}
           >
             {isProcessingUpload ? "Extracting..." : "Upload Photo"}
-          </button>
-          <button type="button" onClick={clearCanvas}>
-            Clear
           </button>
           <button
             type="button"
@@ -668,7 +675,8 @@ function SignatureDialog({
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -736,6 +744,7 @@ function ContractPdfPage({
   onFieldDrop,
   drawTool,
   onDrawingCreate,
+  scrollToPageRequest,
 }: {
   pdf: PDFDocumentProxy;
   pageNumber: number;
@@ -751,12 +760,15 @@ function ContractPdfPage({
   onFieldDrop?: ContractPdfViewerProps["onFieldDrop"];
   drawTool?: ContractPdfViewerProps["drawTool"];
   onDrawingCreate?: ContractPdfViewerProps["onDrawingCreate"];
+  scrollToPageRequest?: ContractPdfViewerProps["scrollToPageRequest"];
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const drawingPointerIdRef = useRef<number | null>(null);
   const drawingPointsRef = useRef<SensitiveDrawingPoint[]>([]);
   const drawingRectRef = useRef<DOMRect | null>(null);
+  const lastTextTapRef = useRef<{ fieldId: string; time: number } | null>(null);
+  const cancelInlineTextEditRef = useRef(false);
   const [pageSize, setPageSize] = useState({ width: 612, height: 792 });
   const [drawingCursorPoint, setDrawingCursorPoint] = useState<{
     x: number;
@@ -765,6 +777,11 @@ function ContractPdfPage({
   } | null>(null);
   const [editingSignatureField, setEditingSignatureField] =
     useState<ContractPdfField | null>(null);
+  const [editingTextField, setEditingTextField] = useState<{
+    fieldId: string;
+    value: string;
+    originalValue: string;
+  } | null>(null);
   const [drawingPreviewPoints, setDrawingPreviewPoints] = useState<SensitiveDrawingPoint[]>([]);
 
   useEffect(() => {
@@ -826,6 +843,11 @@ function ContractPdfPage({
       onPageVisibilityChange(pageNumber, 0);
     };
   }, [onPageVisibilityChange, pageNumber]);
+
+  useEffect(() => {
+    if (scrollToPageRequest?.page !== pageNumber) return;
+    pageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pageNumber, scrollToPageRequest]);
 
   const startDrag = (
     event: ReactPointerEvent<HTMLButtonElement>,
@@ -943,6 +965,62 @@ function ContractPdfPage({
 
   const pageFields = fields.filter((field) => field.page === pageNumber);
   const canDropNewField = mode === "edit" && Boolean(onFieldDrop);
+
+  const beginInlineTextEdit = (field: ContractPdfField) => {
+    if (
+      mode !== "edit" ||
+      (field.type !== "text" && field.type !== "textbox") ||
+      field.locked ||
+      !onFieldsChange
+    ) {
+      return;
+    }
+    cancelInlineTextEditRef.current = false;
+    onSelectedFieldIdChange?.(field.id);
+    setEditingTextField({
+      fieldId: field.id,
+      value: field.label,
+      originalValue: field.label,
+    });
+  };
+
+  const saveInlineTextEdit = () => {
+    if (!editingTextField || !onFieldsChange) return;
+    if (cancelInlineTextEditRef.current) {
+      cancelInlineTextEditRef.current = false;
+      setEditingTextField(null);
+      return;
+    }
+    const nextValue = editingTextField.value.trim()
+      ? editingTextField.value
+      : editingTextField.originalValue;
+    onFieldsChange(
+      fields.map((field) =>
+        field.id === editingTextField.fieldId
+          ? { ...field, label: nextValue }
+          : field,
+      ),
+    );
+    setEditingTextField(null);
+  };
+
+  const cancelInlineTextEdit = () => {
+    cancelInlineTextEditRef.current = true;
+    setEditingTextField(null);
+  };
+
+  const selectOrEditTextField = (field: ContractPdfField) => {
+    onSelectedFieldIdChange?.(field.id);
+    if ((field.type !== "text" && field.type !== "textbox") || field.locked) return;
+    const now = Date.now();
+    const previousTap = lastTextTapRef.current;
+    if (previousTap?.fieldId === field.id && now - previousTap.time <= 360) {
+      lastTextTapRef.current = null;
+      beginInlineTextEdit(field);
+      return;
+    }
+    lastTextTapRef.current = { fieldId: field.id, time: now };
+  };
 
   const handleDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
     if (!canDropNewField) return;
@@ -1243,7 +1321,7 @@ function ContractPdfPage({
               borderColor: field.borderColor || "transparent",
               borderStyle: "solid",
               borderWidth: `${field.borderWidth ?? 0}px`,
-              fontSize: `${field.fontSize}px`,
+              fontSize: `calc(${field.fontSize}px * var(--viewer-zoom, 1))`,
               textAlign: field.textAlign || "left",
             };
 
@@ -1260,7 +1338,7 @@ function ContractPdfPage({
                   data-contract-field-object="true"
                   value={values[field.id] ?? ""}
                   required={field.required}
-                  aria-label={field.label || "Contract field"}
+                  aria-label={field.label || "Document field"}
                   placeholder={field.label || "Type here"}
                   onChange={(event) =>
                     onValuesChange?.({
@@ -1303,6 +1381,42 @@ function ContractPdfPage({
                           ? "Drawing"
                           : "Text");
             if (mode === "edit") {
+              if (
+                (field.type === "text" || field.type === "textbox") &&
+                editingTextField?.fieldId === field.id
+              ) {
+                return (
+                  <textarea
+                    key={field.id}
+                    autoFocus
+                    data-contract-field-object="true"
+                    className={styles.viewer__inlineTextEditor}
+                    style={{ ...fieldStyle, backgroundColor: "transparent" }}
+                    value={editingTextField.value}
+                    aria-label={`Edit ${objectLabel}`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                    onChange={(event) =>
+                      setEditingTextField({
+                        fieldId: field.id,
+                        value: event.target.value,
+                        originalValue: editingTextField.originalValue,
+                      })
+                    }
+                    onBlur={saveInlineTextEdit}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        saveInlineTextEdit();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelInlineTextEdit();
+                      }
+                    }}
+                  />
+                );
+              }
+
               return (
                 <button
                   key={field.id}
@@ -1323,9 +1437,15 @@ function ContractPdfPage({
                   } ${field.locked ? styles["viewer__field--locked"] : ""}`}
                   style={fieldStyle}
                   onPointerDown={(event) => startDrag(event, field)}
-                  onClick={() => onSelectedFieldIdChange?.(field.id)}
+                  onClick={() => selectOrEditTextField(field)}
                   onDoubleClick={(event) => {
                     if (field.locked) return;
+                    if (field.type === "text" || field.type === "textbox") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      beginInlineTextEdit(field);
+                      return;
+                    }
                     if (field.type === "image") {
                       event.preventDefault();
                       event.stopPropagation();
@@ -1441,6 +1561,7 @@ export function ContractPdfViewer({
   onPageCountChange,
   onImageUploadRequest,
   showObjectBorders = true,
+  scrollToPageRequest = null,
   onFieldDrop,
   drawTool = null,
   onDrawingCreate,
@@ -1509,7 +1630,7 @@ export function ContractPdfViewer({
     return (
       <div className={styles.viewer__empty}>
         <strong>No PDF selected</strong>
-        <span>Upload a PDF to start placing contract fields.</span>
+        <span>Upload a PDF to start placing document fields.</span>
       </div>
     );
   }
@@ -1529,7 +1650,7 @@ export function ContractPdfViewer({
     return (
       <div className={styles.viewer__empty}>
         <strong>Loading PDF</strong>
-        <span>Preparing the contract pages.</span>
+        <span>Preparing the document pages.</span>
       </div>
     );
   }
@@ -1560,6 +1681,7 @@ export function ContractPdfViewer({
             onFieldDrop={onFieldDrop}
             drawTool={drawTool}
             onDrawingCreate={onDrawingCreate}
+            scrollToPageRequest={scrollToPageRequest}
           />
         ))}
       </div>

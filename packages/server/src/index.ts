@@ -12,7 +12,7 @@ import {
   publicAnalyticsRouter,
   publicErrorLogsRouter,
 } from "./routes/analytics.routes.js";
-import { adminUsersRouter } from "./routes/admin-users.routes.js";
+import { usersRouter } from "./routes/users.routes.js";
 import { adminBannersRouter, publicBannersRouter } from "./routes/banners.routes.js";
 import { adminCertificatesRouter, publicCertificatesRouter } from "./routes/certificates.routes.js";
 import { adminContactsRouter, publicContactsRouter } from "./routes/contacts.routes.js";
@@ -98,7 +98,7 @@ app.use("/api/admin/certificates", adminCertificatesRouter);
 app.use("/api/admin/reviews", adminReviewsRouter);
 app.use("/api/admin/clients", adminClientsRouter);
 app.use("/api/admin/contracts", adminContractsRouter);
-app.use("/api/admin/users", adminUsersRouter);
+app.use("/api/admin/users", usersRouter);
 app.use("/api/admin/contacts", adminContactsRouter);
 app.use("/api/admin/cv", adminCvRouter);
 app.use("/api/admin/uploads", adminUploadsRouter);

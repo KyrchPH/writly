@@ -14,14 +14,14 @@ const client = new MongoClient(env.DATABASE_URL);
 const database = client.db(env.MONGODB_DB_NAME);
 
 const modelNames = [
-  "adminUser", "passwordResetToken", "adminLoginLog", "project", "service",
+  "user", "passwordResetToken", "userLoginLog", "project", "service",
   "banner", "workExperience", "certificate", "review", "client",
   "reviewInvitation", "contractTemplate", "contract", "contactConfig",
   "cvAsset", "cvOtp", "cvDownload", "visitor", "visitorEvent", "errorLog",
 ] as const;
 
 const defaults: Record<string, Query> = {
-  adminUser: { isApproved: false },
+  user: { isApproved: false },
   project: { previewImages: [], status: "Draft", isFeatured: false, isPinned: false, tags: [], highlights: [] },
   service: { sortOrder: 0, isPublished: true },
   banner: { sortOrder: 0, isPublished: true },
@@ -36,7 +36,12 @@ const defaults: Record<string, Query> = {
   visitor: { visitCount: 0 },
 };
 
-const collection = (model: string) => database.collection(model);
+const collectionNames: Record<string, string> = {
+  user: "users",
+  userLoginLog: "userLoginLogs",
+};
+
+const collection = (model: string) => database.collection(collectionNames[model] ?? model);
 const withoutUndefined = (value: Query) =>
   Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -218,7 +223,8 @@ export const db = makeDb();
 
 export const ensureDatabaseIndexes = async () => {
   await Promise.all([
-    collection("adminUser").createIndex({ email: 1 }, { unique: true }),
+    collection("user").createIndex({ email: 1 }, { unique: true }),
+    collection("user").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
     collection("passwordResetToken").createIndex({ tokenHash: 1 }, { unique: true }),
     collection("client").createIndex({ email: 1 }, { unique: true }),
     collection("reviewInvitation").createIndex({ tokenHash: 1 }, { unique: true }),
