@@ -123,7 +123,7 @@ const isValidSignatureDataUrl = (value: string) =>
   value.startsWith("data:image/png;base64,") ||
   value.startsWith("data:image/svg+xml;utf8,");
 
-const basePublicUrl = () => env.PUBLIC_APP_URL.replace(/\/+$/, "");
+const baseAppUrl = () => env.APP_URL.replace(/\/+$/, "");
 
 const signContractId = (id: string) =>
   createHmac("sha256", env.JWT_SECRET).update(`contract:${id}`).digest("base64url");
@@ -186,7 +186,7 @@ const getContractSigningStatus = async (templateId: string | null) => {
 };
 
 const buildContractUrl = (id: string) =>
-  `${basePublicUrl()}/sign/${encodeURIComponent(createContractToken(id))}`;
+  `${baseAppUrl()}/sign/${encodeURIComponent(createContractToken(id))}`;
 
 const serializeTemplate = (template: {
   id: string;
@@ -513,7 +513,7 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
       contractUrl,
       senderName,
       senderEmail: sender?.email || req.user?.email,
-      logoUrl: `${basePublicUrl()}/writly-logo-white.svg`,
+      logoUrl: `${baseAppUrl()}/writly-logo-white.svg`,
     });
   } catch (error) {
     res.status(202).json({

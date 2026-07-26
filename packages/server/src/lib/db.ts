@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import {
   MongoClient,
   type ClientSession,
+  type Collection,
   type Document,
   type Filter,
   type Sort,
@@ -10,8 +11,28 @@ import { env } from "../config/env.js";
 
 type Query = Record<string, any>;
 
-const client = new MongoClient(env.DATABASE_URL);
-const database = client.db(env.MONGODB_DB_NAME);
+let client = new MongoClient(env.DATABASE_URL);
+let database = client.db(env.MONGODB_DB_NAME);
+
+const isTopologyClosedError = (error: unknown) =>
+  error instanceof Error &&
+  (error.name === "MongoTopologyClosedError" || error.message.includes("Topology is closed"));
+
+const resetMongoClient = async () => {
+  await client.close().catch(() => undefined);
+  client = new MongoClient(env.DATABASE_URL);
+  database = client.db(env.MONGODB_DB_NAME);
+};
+
+const withMongoRetry = async <T>(operation: () => Promise<T>) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (!isTopologyClosedError(error)) throw error;
+    await resetMongoClient();
+    return operation();
+  }
+};
 
 const modelNames = [
   "user", "passwordResetToken", "userLoginLog", "project", "service",
@@ -41,7 +62,8 @@ const collectionNames: Record<string, string> = {
   userLoginLog: "userLoginLogs",
 };
 
-const collection = (model: string) => database.collection(collectionNames[model] ?? model);
+const collection = (model: string): Collection<Document> =>
+  database.collection(collectionNames[model] ?? model);
 const withoutUndefined = (value: Query) =>
   Object.fromEntries(Object.entries(value).filter(([, entry]) => entry !== undefined));
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -150,63 +172,83 @@ const updateParts = (data: Query) => {
 
 const delegate = (model: string, session?: ClientSession) => ({
   async findUnique(args: Query) {
-    return hydrate(model, await collection(model).findOne(mongoFilter(args.where), { session }), args, session);
+    return withMongoRetry(async () =>
+      hydrate(model, await collection(model).findOne(mongoFilter(args.where), { session }), args, session),
+    );
   },
   async findFirst(args: Query = {}) {
-    const sort = mongoSort(args.orderBy);
-    const doc = await collection(model).find(mongoFilter(args.where), { session }).sort(sort).limit(1).next();
-    return hydrate(model, doc, args, session);
+    return withMongoRetry(async () => {
+      const sort = mongoSort(args.orderBy);
+      const doc = await collection(model).find(mongoFilter(args.where), { session }).sort(sort).limit(1).next();
+      return hydrate(model, doc, args, session);
+    });
   },
   async findMany(args: Query = {}) {
-    let cursor = collection(model).find(mongoFilter(args.where), { session });
-    const sort = mongoSort(args.orderBy);
-    if (Object.keys(sort).length) cursor = cursor.sort(sort);
-    if (args.skip) cursor = cursor.skip(args.skip);
-    if (args.take) cursor = cursor.limit(args.take);
-    return Promise.all((await cursor.toArray()).map((doc) => hydrate(model, doc, args, session)));
+    return withMongoRetry(async () => {
+      let cursor = collection(model).find(mongoFilter(args.where), { session });
+      const sort = mongoSort(args.orderBy);
+      if (Object.keys(sort).length) cursor = cursor.sort(sort);
+      if (args.skip) cursor = cursor.skip(args.skip);
+      if (args.take) cursor = cursor.limit(args.take);
+      return Promise.all((await cursor.toArray()).map((doc) => hydrate(model, doc, args, session)));
+    });
   },
   async count(args: Query = {}) {
-    return collection(model).countDocuments(mongoFilter(args.where), { session });
+    return withMongoRetry(() =>
+      collection(model).countDocuments(mongoFilter(args.where), { session }),
+    );
   },
   async create(args: Query) {
-    const now = new Date();
-    const doc = withoutUndefined({ ...defaults[model], id: randomUUID(), createdAt: now, updatedAt: now, ...args.data });
-    await collection(model).insertOne(doc, { session });
-    return hydrate(model, doc, args, session);
+    return withMongoRetry(async () => {
+      const now = new Date();
+      const doc = withoutUndefined({ ...defaults[model], id: randomUUID(), createdAt: now, updatedAt: now, ...args.data });
+      await collection(model).insertOne(doc, { session });
+      return hydrate(model, doc, args, session);
+    });
   },
   async update(args: Query) {
-    const update = updateParts({ ...args.data, updatedAt: new Date() });
-    const result = await collection(model).findOneAndUpdate(mongoFilter(args.where), update, { returnDocument: "after", session });
-    if (!result) throw new Error(`${model} record not found.`);
-    return hydrate(model, result, args, session);
+    return withMongoRetry(async () => {
+      const update = updateParts({ ...args.data, updatedAt: new Date() });
+      const result = await collection(model).findOneAndUpdate(mongoFilter(args.where), update, { returnDocument: "after", session });
+      if (!result) throw new Error(`${model} record not found.`);
+      return hydrate(model, result, args, session);
+    });
   },
   async updateMany(args: Query) {
-    const result = await collection(model).updateMany(mongoFilter(args.where), updateParts({ ...args.data, updatedAt: new Date() }), { session });
-    return { count: result.modifiedCount };
+    return withMongoRetry(async () => {
+      const result = await collection(model).updateMany(mongoFilter(args.where), updateParts({ ...args.data, updatedAt: new Date() }), { session });
+      return { count: result.modifiedCount };
+    });
   },
   async upsert(args: Query) {
-    const existing = await collection(model).findOne(mongoFilter(args.where), { session });
-    return existing
-      ? this.update({ where: args.where, data: args.update, include: args.include, select: args.select })
-      : this.create({ data: args.create, include: args.include, select: args.select });
+    return withMongoRetry(async () => {
+      const existing = await collection(model).findOne(mongoFilter(args.where), { session });
+      return existing
+        ? this.update({ where: args.where, data: args.update, include: args.include, select: args.select })
+        : this.create({ data: args.create, include: args.include, select: args.select });
+    });
   },
   async delete(args: Query) {
-    const result = await collection(model).findOneAndDelete(mongoFilter(args.where), { session });
-    if (!result) throw new Error(`${model} record not found.`);
-    return result;
+    return withMongoRetry(async () => {
+      const result = await collection(model).findOneAndDelete(mongoFilter(args.where), { session });
+      if (!result) throw new Error(`${model} record not found.`);
+      return result;
+    });
   },
   async deleteMany(args: Query = {}) {
-    const result = await collection(model).deleteMany(mongoFilter(args.where), { session });
-    return { count: result.deletedCount };
+    return withMongoRetry(async () => {
+      const result = await collection(model).deleteMany(mongoFilter(args.where), { session });
+      return { count: result.deletedCount };
+    });
   },
 });
 
 const makeDb = (session?: ClientSession): any => {
   const api: Query = {};
   for (const model of modelNames) api[model] = delegate(model, session);
-  api.$connect = () => client.connect();
+  api.$connect = () => withMongoRetry(() => client.connect());
   api.$disconnect = () => client.close();
-  api.$ping = () => database.command({ ping: 1 });
+  api.$ping = () => withMongoRetry(() => database.command({ ping: 1 }));
   api.$transaction = async (work: any) => {
     if (Array.isArray(work)) return Promise.all(work);
     const transactionSession = client.startSession();
@@ -222,12 +264,14 @@ const makeDb = (session?: ClientSession): any => {
 export const db = makeDb();
 
 export const ensureDatabaseIndexes = async () => {
-  await Promise.all([
-    collection("user").createIndex({ email: 1 }, { unique: true }),
-    collection("user").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
-    collection("passwordResetToken").createIndex({ tokenHash: 1 }, { unique: true }),
-    collection("client").createIndex({ email: 1 }, { unique: true }),
-    collection("reviewInvitation").createIndex({ tokenHash: 1 }, { unique: true }),
-    collection("visitor").createIndex({ visitorKey: 1 }, { unique: true }),
-  ]);
+  await withMongoRetry(() =>
+    Promise.all([
+      collection("user").createIndex({ email: 1 }, { unique: true }),
+      collection("user").createIndex({ firebaseUid: 1 }, { unique: true, sparse: true }),
+      collection("passwordResetToken").createIndex({ tokenHash: 1 }, { unique: true }),
+      collection("client").createIndex({ email: 1 }, { unique: true }),
+      collection("reviewInvitation").createIndex({ tokenHash: 1 }, { unique: true }),
+      collection("visitor").createIndex({ visitorKey: 1 }, { unique: true }),
+    ]),
+  );
 };

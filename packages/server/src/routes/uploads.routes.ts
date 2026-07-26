@@ -20,8 +20,7 @@ const frameAncestorOrigins = Array.from(
     [
       "'self'",
       ...env.CORS_ORIGINS,
-      env.PUBLIC_APP_URL,
-      env.ADMIN_APP_URL,
+      env.APP_URL,
       "http://localhost:3000",
       "http://127.0.0.1:3000",
       "https://view.officeapps.live.com",

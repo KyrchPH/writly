@@ -58,7 +58,6 @@ export const authRouter = Router();
 
 authRouter.post("/session", asyncHandler(async (req, res) => {
   const parsed = firebaseSessionSchema.safeParse(req.body);
-  console.log(parsed);
   if (!parsed.success) {
     res.status(400).json({
       message: "Invalid Firebase session payload.",
@@ -301,8 +300,8 @@ authRouter.post("/forgot-password", asyncHandler(async (req, res) => {
     },
   });
 
-  const baseAdminUrl = env.ADMIN_APP_URL.replace(/\/+$/, "");
-  const resetUrl = `${baseAdminUrl}?resetToken=${encodeURIComponent(token)}`;
+  const baseAppUrl = env.APP_URL.replace(/\/+$/, "");
+  const resetUrl = `${baseAppUrl}?resetToken=${encodeURIComponent(token)}`;
 
   try {
     await sendPasswordResetEmail({

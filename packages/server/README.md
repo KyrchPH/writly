@@ -37,8 +37,7 @@ Gmail API:
 
 Application:
 
-- `ADMIN_APP_URL`
-- `PUBLIC_APP_URL`
+- `APP_URL`
 
 Run `npm run gmail:oauth --workspace writly-server` to generate the Gmail refresh
 token used by the server.
