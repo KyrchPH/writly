@@ -11,6 +11,7 @@ import {
 import type { SolutionInquiryType } from "./components/SolutionInquiryDialog";
 import {
   AlertTriangle,
+  BadgeCheck,
   Bot,
   CheckCircle2,
   ChevronDown,
@@ -22,9 +23,12 @@ import {
   FolderOpen,
   Mail,
   MapPin,
+  Minus,
   Palette,
+  Plus,
   Search,
   Send,
+  X,
 } from "lucide-react";
 import { useScrollReveal } from "./hooks/useScrollReveal";
 import { useImagesReady } from "./hooks/useImagesReady";
@@ -189,6 +193,17 @@ type PublicContract = {
   viewedAt: string | null;
   submittedAt: string | null;
   createdAt: string;
+  signingStatus: {
+    totalSigners: number;
+    completedSigners: number;
+    allCompleted: boolean;
+    signers: Array<{
+      id: string;
+      name: string;
+      email: string | null;
+      submittedAt: string | null;
+    }>;
+  };
 };
 
 type WorkExperienceItem = {
@@ -1446,9 +1461,55 @@ export function ReviewInvitationApp() {
 
 function getContractTokenFromPath() {
   if (typeof window === "undefined") return "";
-  const match = window.location.pathname.match(/^\/contracts\/([^/]+)\/?$/);
+  const match = window.location.pathname.match(/^\/sign\/([^/]+)\/?$/);
   return match?.[1] ? decodeURIComponent(match[1]) : "";
 }
+
+const getRecipientDraftStorageKey = (token: string) =>
+  `writly:recipient-contract-draft:${token}`;
+
+const readRecipientDraft = (token: string) => {
+  if (!token) return {};
+  try {
+    const stored = window.localStorage.getItem(getRecipientDraftStorageKey(token));
+    if (!stored) return {};
+    const parsed = JSON.parse(stored) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, string] =>
+        typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+};
+
+const prepareSignatureForSubmission = (value: string) => {
+  if (!value.startsWith("data:image/svg+xml")) {
+    return Promise.resolve(value);
+  }
+
+  return new Promise<string>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, image.naturalWidth);
+      canvas.height = Math.max(1, image.naturalHeight);
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Could not prepare the signature for submission."));
+        return;
+      }
+      context.drawImage(image, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = () => {
+      reject(new Error("The selected signature could not be processed. Please add it again."));
+    };
+    image.src = value;
+  });
+};
 
 export function ContractShareApp() {
   const token = getContractTokenFromPath();
@@ -1456,8 +1517,19 @@ export function ContractShareApp() {
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [submitError, setSubmitError] = useState("");
   const [notice, setNotice] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [missingRequiredFields, setMissingRequiredFields] = useState<string[]>([]);
+  const [isWaitingDialogOpen, setIsWaitingDialogOpen] = useState(false);
+  const [isDownloadingCopy, setIsDownloadingCopy] = useState(false);
+  const [pdfZoom, setPdfZoom] = useState(100);
+  const [activePdfPage, setActivePdfPage] = useState(1);
+  const [pdfPageCount, setPdfPageCount] = useState(1);
+  const [pdfPageRequest, setPdfPageRequest] = useState<{
+    page: number;
+    requestId: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -1481,7 +1553,14 @@ export function ContractShareApp() {
         }
         if (!cancelled) {
           setContract(payload.data);
-          setFieldValues(payload.data.values ?? {});
+          const savedDraft = payload.data.submittedAt ? {} : readRecipientDraft(token);
+          setFieldValues({
+            ...(payload.data.values ?? {}),
+            ...savedDraft,
+          });
+          setIsWaitingDialogOpen(
+            Boolean(payload.data.submittedAt && !payload.data.signingStatus.allCompleted),
+          );
           setError("");
         }
       } catch (loadError) {
@@ -1505,42 +1584,91 @@ export function ContractShareApp() {
     };
   }, [token]);
 
+  useEffect(() => {
+    if (!token || !contract || contract.submittedAt) return;
+    try {
+      window.localStorage.setItem(
+        getRecipientDraftStorageKey(token),
+        JSON.stringify(fieldValues),
+      );
+    } catch (storageError) {
+      console.warn("Recipient document draft could not be saved locally", storageError);
+    }
+  }, [contract, fieldValues, token]);
+
   const submitContract = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!token || !contract || isSubmitting) return;
 
+    const missingFields = contract.fields
+      .filter(
+        (field) =>
+          field.required &&
+          (field.type === "textbox" || field.type === "signature") &&
+          !fieldValues[field.id]?.trim(),
+      )
+      .map((field) => field.objectLabel?.trim() || field.label?.trim() || "Required field");
+    if (missingFields.length > 0) {
+      setMissingRequiredFields(missingFields);
+      return;
+    }
+
     setIsSubmitting(true);
-    setError("");
+    setSubmitError("");
     setNotice("");
     try {
+      const submissionValues = { ...fieldValues };
+      await Promise.all(
+        contract.fields
+          .filter((field) => field.type === "signature" && submissionValues[field.id])
+          .map(async (field) => {
+            submissionValues[field.id] = await prepareSignatureForSubmission(
+              submissionValues[field.id],
+            );
+          }),
+      );
+
       const response = await fetch(
         `${API_BASE}/public/contracts/${encodeURIComponent(token)}/submit`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ values: fieldValues }),
+          body: JSON.stringify({ values: submissionValues }),
         },
       );
       const payload = (await response.json().catch(() => ({}))) as {
-        data?: { values?: Record<string, string>; submittedAt?: string | null };
+        data?: {
+          values?: Record<string, string>;
+          submittedAt?: string | null;
+          signingStatus?: PublicContract["signingStatus"];
+        };
         message?: string;
+        errors?: unknown;
       };
       if (!response.ok) {
+        console.error("Recipient document submission failed", {
+          status: response.status,
+          message: payload.message,
+          errors: payload.errors,
+        });
         throw new Error(payload.message || "Failed to save document fields.");
       }
-      setFieldValues(payload.data?.values ?? fieldValues);
+      setFieldValues(payload.data?.values ?? submissionValues);
       setContract((prev) =>
         prev
           ? {
               ...prev,
-              values: payload.data?.values ?? fieldValues,
+              values: payload.data?.values ?? submissionValues,
               submittedAt: payload.data?.submittedAt ?? new Date().toISOString(),
+              signingStatus: payload.data?.signingStatus ?? prev.signingStatus,
             }
           : prev,
       );
+      setIsWaitingDialogOpen(Boolean(payload.data?.signingStatus?.allCompleted === false));
+      window.localStorage.removeItem(getRecipientDraftStorageKey(token));
       setNotice("Your document fields have been saved.");
     } catch (submitError) {
-      setError(
+      setSubmitError(
         submitError instanceof Error ? submitError.message : "Failed to save document fields.",
       );
     } finally {
@@ -1548,45 +1676,192 @@ export function ContractShareApp() {
     }
   };
 
+  const downloadRecipientCopy = async () => {
+    if (!contract || isDownloadingCopy) return;
+    setIsDownloadingCopy(true);
+    setSubmitError("");
+    try {
+      const response = await fetch(contract.pdfDocument.fileUrl);
+      if (!response.ok) {
+        throw new Error("The completed document could not be downloaded.");
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = contract.pdfDocument.fileName || `${contract.title}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (downloadError) {
+      setSubmitError(
+        downloadError instanceof Error
+          ? downloadError.message
+          : "The completed document could not be downloaded.",
+      );
+    } finally {
+      setIsDownloadingCopy(false);
+    }
+  };
+
   return (
     <main className={`${styles.reviewPage} ${styles.contractPage}`}>
       <section className={`${styles.reviewPage__panel} ${styles.contractPage__panel}`}>
-        <div className={styles.reviewPage__header}>
-          <span className={styles.reviewPage__icon}>
-            <FileText size={24} />
-          </span>
-          <div>
-            <p className={styles.reviewPage__eyebrow}>Document</p>
-            <h1>{contract?.title ?? "Document Review"}</h1>
+        <header className={styles.contractPage__stickyHeader}>
+          <div className={styles.contractPage__brand}>
+            <span className={styles.contractPage__brandMark}>
+              <img src="/writly-logo-white.svg" alt="" />
+            </span>
+            <span>Writly</span>
           </div>
-        </div>
+          <div className={styles.contractPage__headerDocument}>
+            <FileText size={18} />
+            <div>
+              <small>Document</small>
+              <strong>{contract?.title ?? "Document Review"}</strong>
+            </div>
+          </div>
+          {contract && !isLoading && !contract.submittedAt && (
+            <button
+              type="submit"
+              form="contract-share-form"
+              className={styles.contractPage__saveButton}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "Saving..." : "Mark as done"}
+            </button>
+          )}
+        </header>
 
-        {isLoading ? (
-          <div className={styles.reviewPage__loading}>
-            <span />
-            <span />
-            <span />
-          </div>
-        ) : error || !contract ? (
-          <div className={`${styles.reviewPage__status} ${styles["reviewPage__status--error"]}`}>
-            <AlertTriangle size={32} />
-            <h2>Document link unavailable</h2>
-            <p>{error || "This document link is unavailable."}</p>
-          </div>
-        ) : (
-          <form className={styles.contractPage__document} onSubmit={submitContract}>
-            <div className={styles.reviewPage__client}>
+        {contract && !isLoading && (
+          <div className={styles.contractPage__subheader}>
+            <div className={styles.contractPage__subheaderRecipient}>
               <span>Recipient</span>
               <strong>{contract.recipientName}</strong>
-              <small>
-                Created{" "}
-                {new Date(contract.createdAt).toLocaleDateString(undefined, {
-                  month: "long",
-                  day: "numeric",
-                  year: "numeric",
-                })}
-              </small>
             </div>
+            <div className={styles.contractPage__viewControls}>
+              <div className={styles.contractPage__zoomControls}>
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  disabled={pdfZoom <= 50}
+                  onClick={() => setPdfZoom((current) => Math.max(50, current - 10))}
+                >
+                  <Minus size={15} />
+                </button>
+                <span>{pdfZoom}%</span>
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  disabled={pdfZoom >= 200}
+                  onClick={() => setPdfZoom((current) => Math.min(200, current + 10))}
+                >
+                  <Plus size={15} />
+                </button>
+              </div>
+              <span className={styles.contractPage__controlDivider} />
+              <details className={styles.contractPage__pageIndicator}>
+                <summary aria-label="Choose PDF page">
+                  <span>Page {activePdfPage} of {pdfPageCount}</span>
+                  <ChevronDown size={13} aria-hidden="true" />
+                </summary>
+                <div className={styles.contractPage__pageMenu} role="menu">
+                  {Array.from({ length: pdfPageCount }, (_, index) => index + 1).map(
+                    (page) => (
+                      <button
+                        type="button"
+                        role="menuitem"
+                        aria-current={page === activePdfPage ? "page" : undefined}
+                        key={page}
+                        onClick={(event) => {
+                          setActivePdfPage(page);
+                          setPdfPageRequest({ page, requestId: Date.now() });
+                          event.currentTarget.closest("details")?.removeAttribute("open");
+                        }}
+                      >
+                        Page {page}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </details>
+            </div>
+            <small>
+              Created{" "}
+              {new Date(contract.createdAt).toLocaleDateString(undefined, {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+              })}
+            </small>
+          </div>
+        )}
+
+        <div className={styles.contractPage__body}>
+          {isLoading ? (
+            <div className={styles.reviewPage__loading}>
+              <span />
+              <span />
+              <span />
+            </div>
+          ) : error || !contract ? (
+            <div className={`${styles.reviewPage__status} ${styles["reviewPage__status--error"]}`}>
+              <AlertTriangle size={32} />
+              <h2>Document link unavailable</h2>
+              <p>{error || "This document link is unavailable."}</p>
+            </div>
+          ) : contract.submittedAt ? (
+            <div className={styles.contractPage__completionPage}>
+              <span className={styles.contractPage__completionIcon}>
+                <CheckCircle2 size={34} />
+              </span>
+              <span className={styles.contractPage__completionEyebrow}>
+                {contract.signingStatus.allCompleted
+                  ? "Document complete"
+                  : "Your signature is complete"}
+              </span>
+              <h2>
+                {contract.signingStatus.allCompleted
+                  ? "Everyone has signed"
+                  : "Waiting for others to sign"}
+              </h2>
+              <p>
+                {contract.signingStatus.allCompleted
+                  ? "All required signers have completed this document."
+                  : "Your fields were saved successfully. The document will be completed after every remaining signer is done."}
+              </p>
+              {contract.signingStatus.allCompleted && (
+                <div className={styles.contractPage__copyDownload}>
+                  <span>Get your own copy to keep for your records.</span>
+                  <button
+                    type="button"
+                    disabled={isDownloadingCopy}
+                    onClick={() => void downloadRecipientCopy()}
+                  >
+                    <Download size={18} />
+                    {isDownloadingCopy ? "Downloading..." : "Download"}
+                  </button>
+                  {submitError && (
+                    <small>
+                      <AlertTriangle size={14} />
+                      {submitError}
+                    </small>
+                  )}
+                </div>
+              )}
+              {!contract.signingStatus.allCompleted && (
+                <button type="button" onClick={() => setIsWaitingDialogOpen(true)}>
+                  View signing progress
+                </button>
+              )}
+            </div>
+          ) : (
+          <form
+            id="contract-share-form"
+            className={styles.contractPage__document}
+            onSubmit={submitContract}
+          >
             <div className={styles.contractPage__content}>
               <ContractPdfViewer
                 pdfUrl={contract.pdfDocument.fileUrl}
@@ -1594,12 +1869,16 @@ export function ContractShareApp() {
                 mode="fill"
                 values={fieldValues}
                 onValuesChange={setFieldValues}
+                onActivePageChange={setActivePdfPage}
+                onPageCountChange={setPdfPageCount}
+                scrollToPageRequest={pdfPageRequest}
+                zoom={pdfZoom}
               />
             </div>
-            {error && (
+            {submitError && (
               <p className={styles.reviewPage__error}>
                 <AlertTriangle size={15} />
-                {error}
+                {submitError}
               </p>
             )}
             {notice && (
@@ -1608,21 +1887,137 @@ export function ContractShareApp() {
                 {notice}
               </p>
             )}
-            <button
-              type="submit"
-              className={styles.reviewPage__submit}
-              disabled={isSubmitting}
-            >
-              <Send size={16} />
-              {isSubmitting ? "Saving..." : "Save Filled Fields"}
-            </button>
             <p className={styles.reviewPage__finePrint}>
               You can complete only the fields added by the sender. The PDF and
               positioned objects cannot be moved or removed from this link.
             </p>
           </form>
-        )}
+          )}
+        </div>
       </section>
+      {missingRequiredFields.length > 0 && (
+        <div className={styles.contractPage__requiredDialogBackdrop}>
+          <section
+            className={styles.contractPage__requiredDialog}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="required-fields-title"
+            aria-describedby="required-fields-description"
+          >
+            <span className={styles.contractPage__requiredDialogIcon}>
+              <AlertTriangle size={24} />
+            </span>
+            <div>
+              <h2 id="required-fields-title">Complete the required fields</h2>
+              <p id="required-fields-description">
+                Please fill out all required fields before marking this document as done.
+              </p>
+              <ul>
+                {missingRequiredFields.map((fieldName, index) => (
+                  <li key={`${fieldName}-${index}`}>{fieldName}</li>
+                ))}
+              </ul>
+            </div>
+            <button type="button" autoFocus onClick={() => setMissingRequiredFields([])}>
+              OK
+            </button>
+          </section>
+        </div>
+      )}
+      {contract?.submittedAt &&
+        !contract.signingStatus.allCompleted &&
+        isWaitingDialogOpen && (
+          <div className={styles.contractPage__waitingBackdrop}>
+            <div className={styles.contractPage__waitingScrim} />
+            <section
+              className={styles.contractPage__waitingDialog}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="recipient-waiting-title"
+            >
+              <div className={styles.contractPage__waitingGlow} />
+              <header>
+                <div className={styles.contractPage__waitingBrand}>
+                  <span><img src="/writly-logo-white.svg" alt="" /></span>
+                  Writly
+                </div>
+                <button
+                  type="button"
+                  aria-label="Close signing progress"
+                  onClick={() => setIsWaitingDialogOpen(false)}
+                >
+                  <X size={20} />
+                </button>
+              </header>
+              <div className={styles.contractPage__waitingContent}>
+                <span className={styles.contractPage__completionIcon}>
+                  <CheckCircle2 size={26} />
+                </span>
+                <span className={styles.contractPage__completionEyebrow}>
+                  Invitations ready
+                </span>
+                <h2 id="recipient-waiting-title">Waiting for others to sign</h2>
+                <p>
+                  The final document becomes available after every person below marks it
+                  as done.
+                </p>
+                <div className={styles.contractPage__waitingProgress}>
+                  <span>
+                    <strong>{contract.signingStatus.completedSigners}</strong> of{" "}
+                    <strong>{contract.signingStatus.totalSigners}</strong> completed
+                  </span>
+                  <div>
+                    <span
+                      style={{
+                        width: `${
+                          (contract.signingStatus.completedSigners /
+                            contract.signingStatus.totalSigners) *
+                          100
+                        }%`,
+                      }}
+                    />
+                  </div>
+                </div>
+                <div className={styles.contractPage__waitingList}>
+                  <div className={styles.contractPage__waitingSignerDone}>
+                    <span><CheckCircle2 size={17} /></span>
+                    <div><strong>Document creator</strong><small>Signed</small></div>
+                    <BadgeCheck size={18} />
+                  </div>
+                  {contract.signingStatus.signers.map((signer) => {
+                    const hasSigned = Boolean(signer.submittedAt);
+                    const isCurrentSigner = signer.id === contract.id;
+                    return (
+                      <div
+                        className={hasSigned ? styles.contractPage__waitingSignerDone : ""}
+                        key={signer.id}
+                      >
+                        <span>
+                          {hasSigned
+                            ? <CheckCircle2 size={17} />
+                            : (signer.name || signer.email || "S").slice(0, 1).toUpperCase()}
+                        </span>
+                        <div>
+                          <strong>{isCurrentSigner ? "You" : signer.name || signer.email}</strong>
+                          <small>{hasSigned ? "Signed" : "Waiting for signature"}</small>
+                        </div>
+                        {hasSigned ? (
+                          <BadgeCheck size={18} />
+                        ) : (
+                          <span
+                            className={styles.contractPage__waitingSpinner}
+                            aria-label="Waiting for signature"
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <footer>Download unlocks when everyone is done</footer>
+              </div>
+            </section>
+          </div>
+        )}
     </main>
   );
 }

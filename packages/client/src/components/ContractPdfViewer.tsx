@@ -706,7 +706,9 @@ function SignatureField({
         onClick={() => setIsDialogOpen(true)}
       >
         {value ? (
-          <img src={value} alt={label} />
+          <span className={styles.viewer__signatureImageFrame}>
+            <img src={value} alt={label} />
+          </span>
         ) : (
           <span>
             <strong>{label}</strong>

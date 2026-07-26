@@ -991,9 +991,9 @@ const isSectionId = (value: string | null): value is SectionId =>
 
 const isContractDraftRoute = (pathname: string) =>
   pathname === "/" ||
-  pathname === "/admin" ||
-  pathname === "/admin/" ||
-  pathname.startsWith("/admin/contracts/draft");
+  pathname === "/documents" ||
+  pathname === "/documents/" ||
+  pathname.startsWith("/documents/new");
 
 const readStoredActiveSection = (): SectionId => {
   try {
@@ -2907,8 +2907,15 @@ export default function AdminApp() {
   const [signingFlowStep, setSigningFlowStep] = useState<"choice" | "invite" | "tracking">(
     "choice",
   );
+  const [completionFileName, setCompletionFileName] = useState("");
   const [signerEmailDraft, setSignerEmailDraft] = useState("");
   const [signerEmails, setSignerEmails] = useState<string[]>([]);
+  const [signerCompletionByEmail, setSignerCompletionByEmail] = useState<
+    Record<string, boolean>
+  >({});
+  const [signerDeliveryErrorByEmail, setSignerDeliveryErrorByEmail] = useState<
+    Record<string, string>
+  >({});
   const [signerEmailError, setSignerEmailError] = useState("");
   const newDocumentInputRef = useRef<HTMLInputElement | null>(null);
   const [contractsNotice, setContractsNotice] = useState("");
@@ -3927,141 +3934,33 @@ export default function AdminApp() {
     setIsLoadingData(!hasCachedData);
     clearAdminError("global");
     try {
-      const [
-        statsResult,
-        projectsResult,
-        servicesResult,
-        bannersResult,
-        workExperiencesResult,
-        certificatesResult,
-        reviewsResult,
-        clientsResult,
-        contractsResult,
-        pendingUsersResult,
-        contactsResult,
-        cvResult,
-        analyticsResult,
-        errorLogsResult,
-      ] =
-        await Promise.all([
-          requestCachedJson<AdminDataResponses["statsResponse"]>(
-            "/admin/dashboard/stats",
-            authToken,
-            cachedAdminData?.responses.statsResponse,
-            cachedAdminData?.etags.statsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["projectsResponse"]>(
-            "/admin/projects",
-            authToken,
-            cachedAdminData?.responses.projectsResponse,
-            cachedAdminData?.etags.projectsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["servicesResponse"]>(
-            "/admin/services",
-            authToken,
-            cachedAdminData?.responses.servicesResponse,
-            cachedAdminData?.etags.servicesResponse,
-          ),
-          requestCachedJson<AdminDataResponses["bannersResponse"]>(
-            "/admin/banners",
-            authToken,
-            cachedAdminData?.responses.bannersResponse,
-            cachedAdminData?.etags.bannersResponse,
-          ),
-          requestCachedJson<AdminDataResponses["workExperiencesResponse"]>(
-            "/admin/work-experiences",
-            authToken,
-            cachedAdminData?.responses.workExperiencesResponse,
-            cachedAdminData?.etags.workExperiencesResponse,
-          ),
-          requestCachedJson<AdminDataResponses["certificatesResponse"]>(
-            "/admin/certificates",
-            authToken,
-            cachedAdminData?.responses.certificatesResponse,
-            cachedAdminData?.etags.certificatesResponse,
-          ),
-          requestCachedJson<AdminDataResponses["reviewsResponse"]>(
-            "/admin/reviews",
-            authToken,
-            cachedAdminData?.responses.reviewsResponse,
-            cachedAdminData?.etags.reviewsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["clientsResponse"]>(
-            "/admin/clients",
-            authToken,
-            cachedAdminData?.responses.clientsResponse,
-            cachedAdminData?.etags.clientsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["contractsResponse"]>(
-            "/admin/contracts",
-            authToken,
-            cachedAdminData?.responses.contractsResponse,
-            cachedAdminData?.etags.contractsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["pendingUsersResponse"]>(
-            "/admin/users/pending",
-            authToken,
-            cachedAdminData?.responses.pendingUsersResponse,
-            cachedAdminData?.etags.pendingUsersResponse,
-          ),
-          requestCachedJson<AdminDataResponses["contactsResponse"]>(
-            "/admin/contacts",
-            authToken,
-            cachedAdminData?.responses.contactsResponse,
-            cachedAdminData?.etags.contactsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["cvResponse"]>(
-            "/admin/cv",
-            authToken,
-            cachedAdminData?.responses.cvResponse,
-            cachedAdminData?.etags.cvResponse,
-          ),
-          requestCachedJson<AdminDataResponses["analyticsResponse"]>(
-            "/admin/analytics?days=30",
-            authToken,
-            cachedAdminData?.responses.analyticsResponse,
-            cachedAdminData?.etags.analyticsResponse,
-          ),
-          requestCachedJson<AdminDataResponses["errorLogsResponse"]>(
-            "/admin/error-logs?days=30",
-            authToken,
-            cachedAdminData?.responses.errorLogsResponse,
-            cachedAdminData?.etags.errorLogsResponse,
-          ),
-        ]);
+      const contractsResult =
+        await requestCachedJson<AdminDataResponses["contractsResponse"]>(
+          "/admin/contracts",
+          authToken,
+          cachedAdminData?.responses.contractsResponse,
+          cachedAdminData?.etags.contractsResponse,
+        );
 
       const nextResponses: AdminDataResponses = {
-        statsResponse: statsResult.data,
-        projectsResponse: projectsResult.data,
-        servicesResponse: servicesResult.data,
-        bannersResponse: bannersResult.data,
-        workExperiencesResponse: workExperiencesResult.data,
-        certificatesResponse: certificatesResult.data,
-        reviewsResponse: reviewsResult.data,
-        clientsResponse: clientsResult.data,
+        statsResponse: { stats: { projects: 0, services: 0, certificates: 0, reviews: 0 } },
+        projectsResponse: { data: [] },
+        servicesResponse: { data: [] },
+        bannersResponse: { data: [] },
+        workExperiencesResponse: { data: [] },
+        certificatesResponse: { data: [] },
+        reviewsResponse: { data: [] },
+        clientsResponse: { data: [] },
         contractsResponse: contractsResult.data,
-        pendingUsersResponse: pendingUsersResult.data,
-        contactsResponse: contactsResult.data,
-        cvResponse: cvResult.data,
-        analyticsResponse: analyticsResult.data,
-        errorLogsResponse: errorLogsResult.data,
+        pendingUsersResponse: { data: [] },
+        contactsResponse: { data: null },
+        cvResponse: { data: [], active: null },
+        analyticsResponse: { stats: defaultAnalyticsStats, graph: [] },
+        errorLogsResponse: { stats: defaultErrorLogStats, graph: [], data: [] },
       };
 
       writeAdminDataCache(cacheOwnerId, nextResponses, {
-        statsResponse: statsResult.etag,
-        projectsResponse: projectsResult.etag,
-        servicesResponse: servicesResult.etag,
-        bannersResponse: bannersResult.etag,
-        workExperiencesResponse: workExperiencesResult.etag,
-        certificatesResponse: certificatesResult.etag,
-        reviewsResponse: reviewsResult.etag,
-        clientsResponse: clientsResult.etag,
         contractsResponse: contractsResult.etag,
-        pendingUsersResponse: pendingUsersResult.etag,
-        contactsResponse: contactsResult.etag,
-        cvResponse: cvResult.etag,
-        analyticsResponse: analyticsResult.etag,
-        errorLogsResponse: errorLogsResult.etag,
       });
       applyAdminDataResponses(nextResponses);
     } catch (error) {
@@ -4388,6 +4287,144 @@ export default function AdminApp() {
     };
   }, [activeUser?.id, hydrated, token]);
 
+  useEffect(() => {
+    if (
+      !token ||
+      !completedContractTemplateId ||
+      !isSigningFlowOpen
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    let reconnectTimer: number | null = null;
+
+    type SignerStatus = {
+      id: string;
+      recipientEmail: string | null;
+      sentAt: string | null;
+      viewedAt: string | null;
+      submittedAt: string | null;
+    };
+
+    const applySignerStatuses = (statuses: SignerStatus[]) => {
+      setContracts((current) =>
+        current.map((contract) => {
+          const status = statuses.find((candidate) => candidate.id === contract.id);
+          return status
+            ? {
+                ...contract,
+                sentAt: status.sentAt,
+                viewedAt: status.viewedAt,
+                submittedAt: status.submittedAt,
+              }
+            : contract;
+        }),
+      );
+
+      statuses.forEach((status) => {
+        if (!status.recipientEmail) return;
+        const email = status.recipientEmail.toLowerCase();
+        setSignerCompletionByEmail((current) => ({
+          ...current,
+          [email]: Boolean(status.submittedAt),
+        }));
+        if (status.sentAt || status.submittedAt) {
+          setSignerDeliveryErrorByEmail((current) => {
+            const next = { ...current };
+            delete next[email];
+            return next;
+          });
+        }
+      });
+    };
+
+    const handleEventBlock = (block: string) => {
+      let eventName = "message";
+      const dataLines: string[] = [];
+      block.split("\n").forEach((line) => {
+        if (line.startsWith("event:")) {
+          eventName = line.slice("event:".length).trim();
+        } else if (line.startsWith("data:")) {
+          dataLines.push(line.slice("data:".length).trimStart());
+        }
+      });
+      if (dataLines.length === 0) return;
+
+      try {
+        const payload = JSON.parse(dataLines.join("\n")) as {
+          contracts?: SignerStatus[];
+          contract?: SignerStatus;
+        };
+        if (eventName === "snapshot" && Array.isArray(payload.contracts)) {
+          applySignerStatuses(payload.contracts);
+        } else if (eventName === "signer-status" && payload.contract) {
+          applySignerStatuses([payload.contract]);
+        }
+      } catch (error) {
+        console.error("Could not read Writly signer status event.", error);
+      }
+    };
+
+    const connect = async () => {
+      try {
+        const response = await fetch(
+          `${API_BASE}/admin/contracts/templates/${encodeURIComponent(
+            completedContractTemplateId,
+          )}/events`,
+          {
+            headers: {
+              Accept: "text/event-stream",
+              Authorization: `Bearer ${token}`,
+            },
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
+        if (!response.ok || !response.body) {
+          throw new Error(`Signer status stream failed with status ${response.status}.`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, "\n");
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary >= 0) {
+            handleEventBlock(buffer.slice(0, boundary));
+            buffer = buffer.slice(boundary + 2);
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("Writly signer status stream disconnected.", error);
+        }
+      }
+
+      if (!controller.signal.aborted) {
+        reconnectTimer = window.setTimeout(() => {
+          void connect();
+        }, 3000);
+      }
+    };
+
+    void connect();
+    return () => {
+      controller.abort();
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+      }
+    };
+  }, [
+    completedContractTemplateId,
+    isSigningFlowOpen,
+    token,
+  ]);
+
   const handleAuthSuccess = async (nextToken: string, user: ApiUser) => {
     setAuthError("");
     setAuthNotice("");
@@ -4586,7 +4623,7 @@ export default function AdminApp() {
       persistActiveSection("contracts");
       clearAdminError("contracts");
       if (!isContractDraftRoute(window.location.pathname)) {
-        window.history.pushState(null, "", "/admin/contracts/draft");
+        window.history.pushState(null, "", "/documents/new");
       }
       setIsContractDraftOpen(true);
       return;
@@ -5414,8 +5451,8 @@ export default function AdminApp() {
       resetContractDraft();
     }
 
-    if (!window.location.pathname.startsWith("/admin/contracts/draft")) {
-      window.history.pushState(null, "", "/admin/contracts/draft");
+    if (!window.location.pathname.startsWith("/documents/new")) {
+      window.history.pushState(null, "", "/documents/new");
     }
     setIsContractDraftOpen(true);
   };
@@ -5456,7 +5493,7 @@ export default function AdminApp() {
     resetContractDraft();
     setIsContractDraftOpen(false);
     setIsDocumentChooserOpen(true);
-    window.history.pushState(null, "", "/admin");
+    window.history.pushState(null, "", "/documents");
   };
 
   const requestContractDraftExit = () => {
@@ -5473,6 +5510,18 @@ export default function AdminApp() {
       .replace(/[-_]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+
+  const getCompletedPdfFileName = () => {
+    const fallback = contractDraftPdfLabel.toLowerCase().endsWith(".pdf")
+      ? contractDraftPdfLabel
+      : `${getContractPdfBaseName(contractDraftPdfLabel) || "document"}.pdf`;
+    const sanitized = completionFileName
+      .trim()
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "")
+      .replace(/[.\s]+$/, "");
+    if (!sanitized) return fallback;
+    return sanitized.toLowerCase().endsWith(".pdf") ? sanitized : `${sanitized}.pdf`;
+  };
 
   const applyContractPdfFile = (file: File | null) => {
     if (file && file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
@@ -6155,15 +6204,10 @@ export default function AdminApp() {
         fields: contractTemplateFields,
       });
       const objectUrl = URL.createObjectURL(blob);
-      const baseFileName =
-        getContractPdfBaseName(contractDraftPdfLabel) ||
-        contractTemplateName.trim() ||
-        "contract";
-
       if (mode === "download") {
         const link = document.createElement("a");
         link.href = objectUrl;
-        link.download = `${baseFileName}-copy.pdf`;
+        link.download = getCompletedPdfFileName();
         document.body.appendChild(link);
         link.click();
         link.remove();
@@ -6201,8 +6245,11 @@ export default function AdminApp() {
   };
 
   const saveContractTemplateDraft = async () => {
-    const pdfFileName =
+    const sourcePdfFileName =
       contractTemplatePdfFile?.name || contractTemplateExistingPdf?.fileName || "";
+    const pdfFileName = completionFileName.trim()
+      ? getCompletedPdfFileName()
+      : sourcePdfFileName;
     const fallbackName = getContractPdfBaseName(pdfFileName) || "Document";
     const templateName = contractTemplateName.trim() || fallbackName;
     const templateTitle = contractTemplateTitle.trim() || templateName;
@@ -6228,10 +6275,12 @@ export default function AdminApp() {
         ? {
             filePath: uploadedPdf.filePath,
             fileUrl: uploadedPdf.proxyUrl,
-            fileName: contractTemplatePdfFile?.name ?? uploadedPdf.filePath,
+            fileName: pdfFileName || contractTemplatePdfFile?.name || uploadedPdf.filePath,
             mimeType: contractTemplatePdfFile?.type || "application/pdf",
           }
-        : contractTemplateExistingPdf;
+        : contractTemplateExistingPdf
+          ? { ...contractTemplateExistingPdf, fileName: pdfFileName }
+          : null;
 
       if (!pdfDocument) {
         throw new Error("Document PDF is required.");
@@ -6335,6 +6384,7 @@ export default function AdminApp() {
       if (!savedTemplate) return false;
 
       const createdContracts: AdminContract[] = [];
+      const deliveryErrors: Record<string, string> = {};
       for (const signerEmail of signerEmails) {
         const createResponse = await requestJson<{ data: AdminContractApi }>(
           "/admin/contracts",
@@ -6350,18 +6400,53 @@ export default function AdminApp() {
           token,
         );
         const createdContract = mapContract(createResponse.data);
-        const sendResponse = await requestJson<AdminContractEmailResponse>(
-          `/admin/contracts/${createdContract.id}/send`,
-          { method: "POST" },
-          token,
-        );
-        createdContracts.push(mapContract(sendResponse.data));
+        try {
+          const sendResponse = await requestJson<AdminContractEmailResponse>(
+            `/admin/contracts/${createdContract.id}/send`,
+            { method: "POST" },
+            token,
+          );
+          createdContracts.push(mapContract(sendResponse.data));
+          if (sendResponse.emailDelivery?.status === "failed") {
+            const deliveryError =
+              sendResponse.emailDelivery.message || "Failed to send invitation.";
+            deliveryErrors[signerEmail] = deliveryError;
+            console.error("Writly invitation delivery failed.", {
+              recipient: signerEmail,
+              error: deliveryError,
+            });
+          }
+        } catch (error) {
+          const deliveryError =
+            error instanceof Error ? error.message : "Failed to send invitation.";
+          deliveryErrors[signerEmail] = deliveryError;
+          createdContracts.push(createdContract);
+          console.error("Writly invitation request failed.", {
+            recipient: signerEmail,
+            error: deliveryError,
+          });
+        }
       }
 
       setContracts((current) => [...createdContracts, ...current]);
+      setSignerDeliveryErrorByEmail(deliveryErrors);
       const finalizedTemplate = await finalizeContractTemplateDraft(savedTemplate);
       if (!finalizedTemplate) return false;
-      setContractsNotice("Invitations sent and document marked as done.");
+      setSignerCompletionByEmail(
+        Object.fromEntries(
+          createdContracts
+            .filter((contract) => Boolean(contract.recipientEmail))
+            .map((contract) => [
+              contract.recipientEmail as string,
+              Boolean(contract.submittedAt),
+            ]),
+        ),
+      );
+      setContractsNotice(
+        Object.keys(deliveryErrors).length > 0
+          ? "Document marked as done, but one or more invitations failed to send."
+          : "Invitations sent and document marked as done.",
+      );
       return true;
     } catch (error) {
       showAdminError("contracts", error, "Failed to send signing invitations.");
@@ -6460,18 +6545,50 @@ export default function AdminApp() {
         prev.map((contract) => (contract.id === id ? nextContract : contract)),
       );
       if (response.emailDelivery?.status === "failed") {
+        const deliveryError =
+          response.emailDelivery.message || "Failed to send invitation.";
+        if (nextContract.recipientEmail) {
+          setSignerDeliveryErrorByEmail((current) => ({
+            ...current,
+            [nextContract.recipientEmail as string]: deliveryError,
+          }));
+        }
+        console.error("Writly invitation delivery failed.", {
+          recipient: nextContract.recipientEmail,
+          error: deliveryError,
+        });
         setContractsNotice(
           [
             `Document link is ready for ${nextContract.recipientName}, but the email was not sent.`,
-            response.emailDelivery.message,
+            deliveryError,
           ]
             .filter(Boolean)
             .join(" "),
         );
       } else {
+        if (nextContract.recipientEmail) {
+          setSignerDeliveryErrorByEmail((current) => {
+            const next = { ...current };
+            delete next[nextContract.recipientEmail as string];
+            return next;
+          });
+        }
         setContractsNotice(`Document email sent to ${nextContract.recipientEmail}.`);
       }
     } catch (error) {
+      const failedContract = contracts.find((contract) => contract.id === id);
+      const deliveryError =
+        error instanceof Error ? error.message : "Failed to send invitation.";
+      if (failedContract?.recipientEmail) {
+        setSignerDeliveryErrorByEmail((current) => ({
+          ...current,
+          [failedContract.recipientEmail as string]: deliveryError,
+        }));
+      }
+      console.error("Writly invitation request failed.", {
+        recipient: failedContract?.recipientEmail,
+        error: deliveryError,
+      });
       showAdminError("contracts", error, "Failed to send document email.");
     } finally {
       setContractSendingId((prev) => (prev === id ? null : prev));
@@ -7526,32 +7643,41 @@ export default function AdminApp() {
     );
   }
 
-  const recentCompletedDocuments = [
-    ...contractTemplates
-      .filter((template) => template.isFinalized)
-      .map((template) => ({
+  const recentCompletedDocuments = contractTemplates
+    .filter((template) => template.isFinalized)
+    .map((template) => {
+      const signerContracts = contracts.filter(
+        (contract) => contract.templateId === template.id,
+      );
+      const latestSignerUpdate = signerContracts.reduce(
+        (latest, contract) =>
+          new Date(contract.updatedAt).getTime() > new Date(latest).getTime()
+            ? contract.updatedAt
+            : latest,
+        template.updatedAt,
+      );
+      return {
         id: `template-${template.id}`,
         title: template.title,
         fileName: template.pdfDocument.fileName,
         fileUrl: template.pdfDocument.fileUrl,
-        updatedAt: template.updatedAt,
+        updatedAt: latestSignerUpdate,
         pdfDocument: template.pdfDocument,
         pageCount: template.pageCount,
         fields: template.fields,
-      })),
-    ...contracts
-      .filter((contract) => Boolean(contract.submittedAt))
-      .map((contract) => ({
-        id: `contract-${contract.id}`,
-        title: contract.title,
-        fileName: contract.pdfDocument.fileName,
-        fileUrl: contract.pdfDocument.fileUrl,
-        updatedAt: contract.submittedAt ?? contract.updatedAt,
-        pdfDocument: contract.pdfDocument,
-        pageCount: contract.pageCount,
-        fields: contract.fields,
-      })),
-  ]
+        template,
+        signers: signerContracts
+          .filter((contract) => Boolean(contract.recipientEmail))
+          .map((contract) => ({
+            email: contract.recipientEmail as string,
+            completed: Boolean(contract.submittedAt),
+            deliveryFailed: !contract.submittedAt && !contract.sentAt,
+          })),
+        isWaitingForSignatures: signerContracts.some(
+          (contract) => !contract.submittedAt,
+        ),
+      };
+    })
     .sort(
       (left, right) =>
         new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime(),
@@ -7590,6 +7716,28 @@ export default function AdminApp() {
       updatedAt: new Date().toISOString(),
       isFinalized: false,
     });
+  };
+  const reopenWaitingDocument = (
+    document: (typeof recentCompletedDocuments)[number],
+  ) => {
+    setIsDocumentChooserOpen(false);
+    setCompletedContractTemplateId(document.template.id);
+    setSignerEmails(document.signers.map((signer) => signer.email));
+    setSignerCompletionByEmail(
+      Object.fromEntries(
+        document.signers.map((signer) => [signer.email, signer.completed]),
+      ),
+    );
+    setSignerDeliveryErrorByEmail(
+      Object.fromEntries(
+        document.signers
+          .filter((signer) => signer.deliveryFailed)
+          .map((signer) => [signer.email, "Failed to send invitation."]),
+      ),
+    );
+    setSigningFlowStep("tracking");
+    setIsSigningFlowOpen(true);
+    openContractDraft(document.template);
   };
   const documentChooserDialog =
     token && isDocumentChooserOpen
@@ -7697,9 +7845,17 @@ export default function AdminApp() {
                         <button
                           type="button"
                           className={styles.documentChooser__recentOpen}
-                          onClick={() =>
-                            window.open(document.fileUrl, "_blank", "noopener,noreferrer")
-                          }
+                          onClick={() => {
+                            if (document.isWaitingForSignatures) {
+                              reopenWaitingDocument(document);
+                              return;
+                            }
+                            window.open(
+                              document.fileUrl,
+                              "_blank",
+                              "noopener,noreferrer",
+                            );
+                          }}
                         >
                           <span className={styles.documentChooser__fileIcon}>
                             <FileText size={20} />
@@ -7707,6 +7863,11 @@ export default function AdminApp() {
                           <span>
                             <strong>{document.title}</strong>
                             <small>{document.fileName}</small>
+                            {document.isWaitingForSignatures && (
+                              <span className={styles.documentChooser__waitingTag}>
+                                Waiting for signatures
+                              </span>
+                            )}
                           </span>
                           <time>{new Date(document.updatedAt).toLocaleDateString()}</time>
                           <Lock size={15} />
@@ -7776,11 +7937,18 @@ export default function AdminApp() {
       setSignerEmailError("");
       if (completedContractTemplateId) {
         setCompletedContractTemplateId(null);
+        setSignerCompletionByEmail({});
+        setSignerDeliveryErrorByEmail({});
         setIsContractDraftOpen(false);
         setIsDocumentChooserOpen(true);
-        window.history.pushState(null, "", "/admin");
+        window.history.pushState(null, "", "/documents");
       }
     };
+    const completedSignerCount =
+      1 +
+      signerEmails.filter((email) => signerCompletionByEmail[email]).length;
+    const totalSignerCount = signerEmails.length + 1;
+    const allSignersCompleted = completedSignerCount === totalSignerCount;
 
     return (
       <div
@@ -8210,6 +8378,11 @@ export default function AdminApp() {
                   className={styles.contractDraft__doneButton}
                   disabled={contractTemplateSaving}
                   onClick={() => {
+                    setCompletionFileName(
+                      contractDraftPdfLabel.toLowerCase().endsWith(".pdf")
+                        ? contractDraftPdfLabel
+                        : `${getContractPdfBaseName(contractDraftPdfLabel) || "document"}.pdf`,
+                    );
                     setSigningFlowStep("choice");
                     setIsSigningFlowOpen(true);
                   }}
@@ -8925,7 +9098,10 @@ export default function AdminApp() {
                       <div className={styles.contractDraft__zoomMenu}>
                         <button
                           type="button"
-                          onClick={() => updateContractPdfZoom(() => contractPdfFitZoom)}
+                          onClick={(event) => {
+                            updateContractPdfZoom(() => contractPdfFitZoom);
+                            event.currentTarget.closest("details")?.removeAttribute("open");
+                          }}
                         >
                           Fit to Screen
                         </button>
@@ -8933,9 +9109,10 @@ export default function AdminApp() {
                           <button
                             key={value}
                             type="button"
-                            onClick={() =>
-                              updateContractPdfZoom(() => Math.max(contractPdfFitZoom, value))
-                            }
+                            onClick={(event) => {
+                              updateContractPdfZoom(() => Math.max(contractPdfFitZoom, value));
+                              event.currentTarget.closest("details")?.removeAttribute("open");
+                            }}
                           >
                             {value}%
                           </button>
@@ -8977,6 +9154,25 @@ export default function AdminApp() {
                       Download your completed copy now, or invite other people to add their
                       signatures to this document.
                     </p>
+                    <label className={styles.signingFlow__fileNameField}>
+                      <span>File name</span>
+                      <input
+                        type="text"
+                        value={completionFileName}
+                        maxLength={255}
+                        spellCheck="false"
+                        aria-label="Completed PDF file name"
+                        onChange={(event) => setCompletionFileName(event.target.value)}
+                        onBlur={() => setCompletionFileName(getCompletedPdfFileName())}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            setCompletionFileName(getCompletedPdfFileName());
+                            event.currentTarget.blur();
+                          }
+                        }}
+                      />
+                    </label>
                     <div className={styles.signingFlow__choiceGrid}>
                       <button
                         type="button"
@@ -9053,19 +9249,55 @@ export default function AdminApp() {
                           <span>Your signing list is empty</span>
                           <small>Add at least one valid email address.</small>
                         </div>
-                      ) : signerEmails.map((email, index) => (
-                        <div className={styles.signingFlow__recipient} key={email}>
-                          <span className={styles.signingFlow__avatar}>{email.slice(0, 1).toUpperCase()}</span>
-                          <span><strong>{email}</strong><small>Signer {index + 1} · Pending invitation</small></span>
-                          <button
-                            type="button"
-                            aria-label={`Remove ${email}`}
-                            onClick={() => setSignerEmails((current) => current.filter((item) => item !== email))}
+                      ) : signerEmails.map((email, index) => {
+                        const signerContract = contracts.find(
+                          (contract) =>
+                            contract.templateId === completedContractTemplateId &&
+                            contract.recipientEmail?.toLowerCase() === email.toLowerCase(),
+                        );
+                        const invitationStatus = signerContract?.submittedAt
+                          ? "Signed"
+                          : signerContract?.viewedAt
+                            ? "Opened"
+                            : signerContract?.sentAt
+                              ? "Invitation sent"
+                              : "Pending invitation";
+                        return (
+                          <div
+                            className={`${styles.signingFlow__recipient} ${
+                              signerContract?.submittedAt
+                                ? styles["signingFlow__recipient--done"]
+                                : ""
+                            }`}
+                            key={email}
                           >
-                            <X size={15} />
-                          </button>
-                        </div>
-                      ))}
+                            <span className={styles.signingFlow__avatar}>
+                              {signerContract?.submittedAt
+                                ? <CheckCircle2 size={17} />
+                                : email.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span>
+                              <strong>{email}</strong>
+                              <small>Signer {index + 1} · {invitationStatus}</small>
+                            </span>
+                            {signerContract?.submittedAt ? (
+                              <BadgeCheck size={18} />
+                            ) : (
+                              <button
+                                type="button"
+                                aria-label={`Remove ${email}`}
+                                onClick={() =>
+                                  setSignerEmails((current) =>
+                                    current.filter((item) => item !== email),
+                                  )
+                                }
+                              >
+                                <X size={15} />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     <footer className={styles.signingFlow__footer}>
                       <span>{signerEmails.length} {signerEmails.length === 1 ? "recipient" : "recipients"}</span>
@@ -9100,15 +9332,20 @@ export default function AdminApp() {
                 {signingFlowStep === "tracking" && (
                   <div className={styles.signingFlow__content}>
                     <span className={styles.signingFlow__successIcon}><CheckCircle2 size={26} /></span>
-                    <span className={styles.signingFlow__eyebrow}>Invitations ready</span>
-                    <h2 id="signing-flow-title">Waiting for others to sign</h2>
+                    <span className={styles.signingFlow__eyebrow}>
+                      {allSignersCompleted ? "Document completed" : "Invitations ready"}
+                    </span>
+                    <h2 id="signing-flow-title">
+                      {allSignersCompleted ? "Everyone has signed" : "Waiting for others to sign"}
+                    </h2>
                     <p>
-                      The final download becomes available after every person below marks the
-                      document as done.
+                      {allSignersCompleted
+                        ? "Every requested signature has been completed."
+                        : "The final download becomes available after every person below marks the document as done."}
                     </p>
                     <div className={styles.signingFlow__progress}>
-                      <span><strong>1</strong> of <strong>{signerEmails.length + 1}</strong> completed</span>
-                      <div><span style={{ width: `${100 / (signerEmails.length + 1)}%` }} /></div>
+                      <span><strong>{completedSignerCount}</strong> of <strong>{totalSignerCount}</strong> completed</span>
+                      <div><span style={{ width: `${(completedSignerCount / totalSignerCount) * 100}%` }} /></div>
                     </div>
                     <div className={styles.signingFlow__recipientList}>
                       <div className={`${styles.signingFlow__recipient} ${styles["signingFlow__recipient--done"]}`}>
@@ -9116,19 +9353,82 @@ export default function AdminApp() {
                         <span><strong>You</strong><small>Document creator · Signed</small></span>
                         <BadgeCheck size={18} />
                       </div>
-                      {signerEmails.map((email) => (
-                        <div className={styles.signingFlow__recipient} key={email}>
-                          <span className={styles.signingFlow__avatar}>{email.slice(0, 1).toUpperCase()}</span>
-                          <span><strong>{email}</strong><small>Waiting for signature</small></span>
-                          <span className={styles.signingFlow__pendingDot} />
-                        </div>
-                      ))}
+                      {signerEmails.map((email) => {
+                        const hasSigned = Boolean(signerCompletionByEmail[email]);
+                        const deliveryError = signerDeliveryErrorByEmail[email];
+                        const signerContract = contracts.find(
+                          (contract) =>
+                            contract.templateId === completedContractTemplateId &&
+                            contract.recipientEmail?.toLowerCase() === email.toLowerCase(),
+                        );
+                        const isResending =
+                          Boolean(signerContract) &&
+                          contractSendingId === signerContract?.id;
+                        return (
+                          <div
+                            className={`${styles.signingFlow__recipient} ${
+                              hasSigned ? styles["signingFlow__recipient--done"] : ""
+                            }`}
+                            key={email}
+                          >
+                            <span className={styles.signingFlow__avatar}>
+                              {hasSigned ? (
+                                <CheckCircle2 size={17} />
+                              ) : (
+                                email.slice(0, 1).toUpperCase()
+                              )}
+                            </span>
+                            <span>
+                              <strong>{email}</strong>
+                              <small>
+                                {hasSigned ? "Signed" : "Waiting for signature"}
+                              </small>
+                            </span>
+                            {hasSigned ? (
+                              <BadgeCheck size={18} />
+                            ) : (
+                              <span className={styles.signingFlow__pendingActions}>
+                                <button
+                                  type="button"
+                                  className={styles.signingFlow__resend}
+                                  disabled={!signerContract || isResending}
+                                  onClick={() => {
+                                    if (!signerContract) return;
+                                    void sendContractEmail(signerContract.id);
+                                  }}
+                                >
+                                  {isResending
+                                    ? "Retrying..."
+                                    : deliveryError
+                                      ? "Retry"
+                                      : "Resend"}
+                                </button>
+                                {deliveryError && !isResending ? (
+                                  <span
+                                    className={styles.signingFlow__failedStatus}
+                                    title={deliveryError}
+                                  >
+                                    <X size={15} aria-hidden="true" />
+                                    Failed to send
+                                  </span>
+                                ) : (
+                                  <span
+                                    className={styles.signingFlow__pendingSpinner}
+                                    aria-label="Waiting for signature"
+                                  />
+                                )}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                     <footer className={styles.signingFlow__footer}>
-                      <span>Download unlocks when everyone is done</span>
-                      <button type="button" className={styles.signingFlow__primary} onClick={closeSigningFlow}>
-                        Done
-                      </button>
+                      <span>
+                        {allSignersCompleted
+                          ? "The completed document is ready"
+                          : "Download unlocks when everyone is done"}
+                      </span>
                     </footer>
                   </div>
                 )}

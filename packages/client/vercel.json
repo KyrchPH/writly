@@ -1,11 +1,15 @@
 {
   "rewrites": [
     {
-      "source": "/admin",
+      "source": "/documents",
       "destination": "/index.html"
     },
     {
-      "source": "/admin/(.*)",
+      "source": "/documents/(.*)",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/sign/(.*)",
       "destination": "/index.html"
     },
     {

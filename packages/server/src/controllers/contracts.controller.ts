@@ -4,6 +4,10 @@ import { z } from "zod";
 import { env } from "../config/env.js";
 import { sendContractEmail } from "../lib/mailer.js";
 import { db } from "../lib/db.js";
+import {
+  publishContractEvent,
+  subscribeToContractEvents,
+} from "../lib/contract-events.js";
 import { normalizeRouteParam, sendValidationError } from "./helpers.js";
 
 const optionalEmailSchema = z.preprocess(
@@ -115,6 +119,10 @@ const parseStoredValues = (value: unknown) => {
   return parsed.success ? parsed.data : {};
 };
 
+const isValidSignatureDataUrl = (value: string) =>
+  value.startsWith("data:image/png;base64,") ||
+  value.startsWith("data:image/svg+xml;utf8,");
+
 const basePublicUrl = () => env.PUBLIC_APP_URL.replace(/\/+$/, "");
 
 const signContractId = (id: string) =>
@@ -140,8 +148,45 @@ const getContractIdFromToken = (token: string) => {
   return isMatchingSignature(expectedSignature, signature) ? id : null;
 };
 
+const getContractSigningStatus = async (templateId: string | null) => {
+  if (!templateId) {
+    return {
+      totalSigners: 1,
+      completedSigners: 1,
+      allCompleted: true,
+      signers: [],
+    };
+  }
+
+  const contracts = await db.contract.findMany({
+    where: { templateId },
+    orderBy: { createdAt: "asc" },
+  });
+  const signers = contracts.map((contract: {
+    id: string;
+    recipientName: string;
+    recipientEmail: string | null;
+    submittedAt: Date | null;
+  }) => ({
+    id: contract.id,
+    name: contract.recipientName,
+    email: contract.recipientEmail,
+    submittedAt: contract.submittedAt,
+  }));
+  const completedSigners =
+    1 + signers.filter((signer: { submittedAt: Date | null }) => signer.submittedAt).length;
+  const totalSigners = signers.length + 1;
+
+  return {
+    totalSigners,
+    completedSigners,
+    allCompleted: completedSigners === totalSigners,
+    signers,
+  };
+};
+
 const buildContractUrl = (id: string) =>
-  `${basePublicUrl()}/contracts/${encodeURIComponent(createContractToken(id))}`;
+  `${basePublicUrl()}/sign/${encodeURIComponent(createContractToken(id))}`;
 
 const serializeTemplate = (template: {
   id: string;
@@ -452,12 +497,23 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
   }
 
   const contractUrl = buildContractUrl(contract.id);
+  const sender = req.user?.sub
+    ? await db.user.findUnique({ where: { id: req.user.sub } })
+    : null;
+  const senderName =
+    sender?.name?.trim() ||
+    req.user?.email?.split("@")[0] ||
+    env.GMAIL_FROM_NAME ||
+    "A Writly user";
   try {
     await sendContractEmail({
       to: contract.recipientEmail,
       recipientName: contract.recipientName,
       contractTitle: contract.title,
       contractUrl,
+      senderName,
+      senderEmail: sender?.email || req.user?.email,
+      logoUrl: `${basePublicUrl()}/writly-logo-white.svg`,
     });
   } catch (error) {
     res.status(202).json({
@@ -509,6 +565,65 @@ export const deleteAdminContract: RequestHandler = async (req, res) => {
   res.status(204).send();
 };
 
+export const streamAdminContractEvents: RequestHandler = async (req, res) => {
+  const templateId = normalizeRouteParam(req.params.id);
+  if (!templateId) {
+    res.status(400).json({ message: "Invalid document template id." });
+    return;
+  }
+
+  const template = await db.contractTemplate.findUnique({ where: { id: templateId } });
+  if (!template) {
+    res.status(404).json({ message: "Document template not found." });
+    return;
+  }
+
+  const writeEvent = (event: string, data: unknown) => {
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  res.write("retry: 3000\n\n");
+
+  const contracts = await db.contract.findMany({
+    where: { templateId },
+    orderBy: { createdAt: "asc" },
+  });
+  writeEvent("snapshot", {
+    templateId,
+    contracts: contracts.map((contract: {
+      id: string;
+      recipientEmail: string | null;
+      sentAt: Date | null;
+      viewedAt: Date | null;
+      submittedAt: Date | null;
+    }) => ({
+      id: contract.id,
+      recipientEmail: contract.recipientEmail,
+      sentAt: contract.sentAt,
+      viewedAt: contract.viewedAt,
+      submittedAt: contract.submittedAt,
+    })),
+  });
+
+  const unsubscribe = subscribeToContractEvents(templateId, writeEvent);
+  const heartbeat = setInterval(() => {
+    res.write(`: heartbeat ${Date.now()}\n\n`);
+  }, 20_000);
+  heartbeat.unref();
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+};
+
 export const getPublicContract: RequestHandler = async (req, res) => {
   const token = normalizeRouteParam(req.params.token);
   const id = token ? getContractIdFromToken(token) : null;
@@ -529,7 +644,20 @@ export const getPublicContract: RequestHandler = async (req, res) => {
       where: { id },
       data: { viewedAt },
     });
+    if (contract.templateId) {
+      publishContractEvent(contract.templateId, "signer-status", {
+        templateId: contract.templateId,
+        contract: {
+          id: contract.id,
+          recipientEmail: contract.recipientEmail,
+          sentAt: contract.sentAt,
+          viewedAt,
+          submittedAt: contract.submittedAt,
+        },
+      });
+    }
   }
+  const signingStatus = await getContractSigningStatus(contract.templateId);
 
   res.status(200).json({
     data: {
@@ -548,6 +676,7 @@ export const getPublicContract: RequestHandler = async (req, res) => {
       viewedAt,
       submittedAt: contract.submittedAt,
       createdAt: contract.createdAt,
+      signingStatus,
     },
   });
 };
@@ -588,11 +717,11 @@ export const submitPublicContract: RequestHandler = async (req, res) => {
   const invalidSignatureField = fillableFields.find((field) => {
     if (field.type !== "signature") return false;
     const value = values[field.id]?.trim();
-    return Boolean(value && !value.startsWith("data:image/png;base64,"));
+    return Boolean(value && !isValidSignatureDataUrl(value));
   });
   if (invalidSignatureField) {
     res.status(400).json({
-      message: `Please upload or draw a valid PNG signature for "${
+      message: `Please upload or draw a valid signature for "${
         invalidSignatureField.label || "signature"
       }".`,
     });
@@ -618,11 +747,26 @@ export const submitPublicContract: RequestHandler = async (req, res) => {
     },
   });
 
+  if (updatedContract.templateId) {
+    publishContractEvent(updatedContract.templateId, "signer-status", {
+      templateId: updatedContract.templateId,
+      contract: {
+        id: updatedContract.id,
+        recipientEmail: updatedContract.recipientEmail,
+        sentAt: updatedContract.sentAt,
+        viewedAt: updatedContract.viewedAt,
+        submittedAt: updatedContract.submittedAt,
+      },
+    });
+  }
+  const signingStatus = await getContractSigningStatus(updatedContract.templateId);
+
   res.status(200).json({
     data: {
       id: updatedContract.id,
       values: parseStoredValues(updatedContract.values),
       submittedAt: updatedContract.submittedAt,
+      signingStatus,
     },
   });
 };

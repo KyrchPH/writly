@@ -2096,7 +2096,38 @@ button.dashboardList__row:hover,
   line-height: 1.65;
 }
 
-.signingFlow__choiceGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 25px; }
+.signingFlow__fileNameField {
+  display: grid;
+  gap: 7px;
+  margin-top: 22px;
+}
+
+.signingFlow__fileNameField > span {
+  color: #565a65;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.signingFlow__fileNameField > input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #dedee7;
+  border-radius: 11px;
+  background: #fafafd;
+  color: #20222a;
+  padding: 11px 13px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  outline: none;
+}
+
+.signingFlow__fileNameField > input:focus {
+  border-color: #7668f4;
+  box-shadow: 0 0 0 3px rgba(103, 87, 245, .12);
+}
+
+.signingFlow__choiceGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
 
 .signingFlow__choice {
   position: relative;
@@ -2253,7 +2284,55 @@ button.dashboardList__row:hover,
 .signingFlow__recipient--done { border-color: #ccebdd; background: #f3fbf7; }
 .signingFlow__recipient--done .signingFlow__avatar { background: #dcf5e8; color: #138a52; }
 .signingFlow__recipient--done > svg { color: #16a361; }
-.signingFlow__pendingDot { width: 8px; height: 8px; border-radius: 50%; background: #f2a93b; box-shadow: 0 0 0 4px #fff0d7; }
+
+.signingFlow__pendingActions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.signingFlow__pendingSpinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid #dedafc;
+  border-top-color: #6252ee;
+  border-radius: 50%;
+  animation: signingFlowPendingSpin .8s linear infinite;
+}
+
+.signingFlow__failedStatus {
+  color: #d92d20;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.signingFlow__failedStatus > svg {
+  flex: 0 0 auto;
+  stroke-width: 2.4;
+}
+
+.signingFlow__resend {
+  border: 0;
+  background: transparent;
+  color: #5848e8;
+  padding: 3px 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  cursor: pointer;
+}
+
+.signingFlow__resend:hover { color: #3928d0; text-decoration: underline; }
+.signingFlow__resend:disabled { color: #9995b1; cursor: default; text-decoration: none; }
+
+@keyframes signingFlowPendingSpin {
+  to { transform: rotate(360deg); }
+}
 
 .signingFlow__progress { margin-top: 22px; }
 .signingFlow__progress > span { color: #555a65; font-size: 11px; }
@@ -2781,6 +2860,16 @@ button.dashboardList__row:hover,
 .documentChooser__recentOpen small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .documentChooser__recentOpen strong { font-size: 12px; }
 .documentChooser__recentOpen small { color: #858a94; font-size: 10px; }
+.documentChooser__waitingTag {
+  width: fit-content;
+  border-radius: 999px;
+  background: #fff3d6;
+  color: #8a5a00;
+  padding: 2px 7px;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1.35;
+}
 .documentChooser__recentOpen time { color: #777c86; font-size: 11px; }
 .documentChooser__recentOpen > svg { color: #8c9099; }
 .documentChooser__recentTable > button > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
@@ -6629,26 +6718,118 @@ button.dashboardList__row:hover,
 }
 
 @media (max-width: 900px) {
+  .admin,
   .admin__shell {
-    grid-template-columns: 1fr;
+    height: 100dvh;
+    min-height: 100dvh;
   }
 
-  .sidebar {
+  .admin__shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .sidebar,
+  .sidebar--collapsed {
+    position: relative;
+    inset: auto;
+    width: 100%;
+    height: auto;
+    min-width: 0;
     border-right: none;
     border-bottom: 1px solid var(--border);
+    padding: max(10px, env(safe-area-inset-top)) 12px 10px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden;
   }
 
   .sidebar__collapseButton {
-    top: 12px;
-    right: 12px;
+    display: none;
   }
 
-  .sidebar__actions {
-    margin-top: 8px;
+  .sidebar__top,
+  .sidebar--collapsed .sidebar__top {
+    width: auto;
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .sidebar__brand,
+  .sidebar--collapsed .sidebar__brand {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .sidebar__brand div,
+  .sidebar--collapsed .sidebar__brand div {
+    display: none;
+  }
+
+  .sidebar__nav,
+  .sidebar--collapsed .sidebar__nav {
+    min-width: 0;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline proximity;
+  }
+
+  .sidebar__navItem,
+  .sidebar--collapsed .sidebar__navItem {
+    flex: 0 0 auto;
+    width: auto;
+    height: 44px;
+    justify-content: center;
+    gap: 7px;
+    padding: 0 12px;
+    scroll-snap-align: start;
+  }
+
+  .sidebar--collapsed .sidebar__navItem span {
+    display: inline;
+  }
+
+  .sidebar__navBadge,
+  .sidebar--collapsed .sidebar__navBadge {
+    position: static;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-color: color-mix(in srgb, var(--foreground) 14%, var(--border));
+    background: color-mix(in srgb, var(--primary) 18%, var(--background));
+    color: var(--foreground);
+    font-size: 10px;
+  }
+
+  .sidebar__actions,
+  .sidebar--collapsed .sidebar__actions {
+    margin: 0;
+    flex-direction: row;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .sidebar__actionButton {
+    width: 40px;
+    height: 40px;
   }
 
   .content {
     grid-column: 1;
+    grid-row: 2;
+    height: auto;
+    min-height: 0;
+    overscroll-behavior: contain;
   }
 
   .contentBusyOverlay,
@@ -6664,7 +6845,7 @@ button.dashboardList__row:hover,
   }
 
   .content {
-    padding: 14px;
+    padding: 14px 14px max(14px, env(safe-area-inset-bottom));
   }
 
   .panel {
@@ -6807,25 +6988,41 @@ button.dashboardList__row:hover,
     transform: none;
     justify-self: stretch;
     width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .contractDraft__objectToolbar::-webkit-scrollbar {
+    display: none;
   }
 
   .contractDraft__actionMenu {
-    justify-self: stretch;
-    width: 100%;
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    width: auto;
+    min-width: 0;
+    gap: 5px;
   }
 
   .contractDraft__actionMenu .contractDraft__saveButton {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     width: auto;
     margin-left: 0;
   }
 
   .contractDraft__objectButton {
-    flex: 1 1 140px;
+    flex: 0 0 auto;
+    min-height: 44px;
   }
 
   .contractDraft__drawTool {
-    flex: 1 1 140px;
+    flex: 0 0 auto;
   }
 
   .contractDraft__drawTool .contractDraft__objectButton {
@@ -6834,7 +7031,7 @@ button.dashboardList__row:hover,
 
   .contractDraft__saveButton,
   .contractDraft__backButton {
-    width: 100%;
+    width: auto;
   }
 
   .contractsListHeader {
@@ -6908,7 +7105,6 @@ button.dashboardList__row:hover,
 
   .adminDialog__header,
   .adminDialog__actions {
-    flex-direction: column;
     align-items: stretch;
   }
 
@@ -6930,6 +7126,195 @@ button.dashboardList__row:hover,
 
   .table__actions {
     flex-wrap: wrap;
+  }
+
+  .sidebar,
+  .sidebar--collapsed {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    padding-inline: 10px;
+    gap: 8px 10px;
+  }
+
+  .sidebar__top,
+  .sidebar--collapsed .sidebar__top {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sidebar__actions,
+  .sidebar--collapsed .sidebar__actions {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+  }
+
+  .sidebar__nav,
+  .sidebar--collapsed .sidebar__nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .contractDraft {
+    min-height: 100dvh;
+  }
+
+  .contractDraft__topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 8px 8px;
+  }
+
+  .contractDraft__title {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .contractDraft__objectToolbar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.1);
+    padding: 2px;
+  }
+
+  .contractDraft__objectToolbar .contractDraft__historyButton,
+  .contractDraft__objectToolbar .contractDraft__objectButton {
+    color: #ffffff;
+  }
+
+  .contractDraft__objectToolbarDivider {
+    background: rgba(255, 255, 255, 0.28);
+  }
+
+  .contractDraft__historyButton {
+    width: 42px;
+    height: 42px;
+  }
+
+  .contractDraft__exportIconButton {
+    width: 40px;
+    height: 40px;
+  }
+
+  .contractDraft__topbar .contractDraft__saveButton,
+  .contractDraft__topbar .contractDraft__doneButton {
+    min-height: 40px;
+    padding-inline: 10px;
+  }
+
+  .contractDraft__exportIconButton + .contractDraft__saveButton {
+    margin-left: 0;
+  }
+
+  .contractDraft__statusBar {
+    min-height: 48px;
+    padding: 7px 10px;
+    overflow-x: auto;
+  }
+
+  .contractDraft__statusControls {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .contractDraft__objectBorderToggle,
+  .contractDraft__pageIndicator summary {
+    min-height: 40px;
+  }
+
+  .contractDraft__panel {
+    max-height: 420px;
+  }
+
+  .contractDraft__objectsList {
+    max-height: 210px;
+  }
+
+  .contractDraft__pdfStage {
+    min-height: min(520px, 72dvh);
+  }
+
+  .contractDraft__pdfViewport {
+    padding: 8px;
+  }
+
+  .contractDraft__zoomButtons button,
+  .contractDraft__zoomValue summary {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .contractDraft__zoomValue output {
+    min-width: 48px;
+    padding-block: 10px;
+  }
+
+  .contractDraft__drawMenu {
+    position: fixed;
+    top: auto;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    width: auto;
+    transform: none;
+  }
+
+  .adminDialog {
+    padding: 10px;
+  }
+
+  .adminDialog__panel,
+  .adminDialog__panel--wide {
+    width: 100%;
+    max-height: calc(100dvh - 20px);
+    padding: 15px;
+  }
+
+  .adminDialog__header {
+    flex-direction: row;
+  }
+
+  .adminDialog__close,
+  .adminDialog__secondary,
+  .adminSelect__trigger,
+  .adminSelect__option,
+  .adminDatePicker__trigger,
+  .adminDatePicker__header button,
+  .projectManager__createButton,
+  .projectManager__iconButton,
+  .projectManager__deleteButton,
+  .projectManager__labelButton,
+  .table__row button,
+  .table__link {
+    min-height: 44px;
+  }
+
+  .adminDialog__close,
+  .projectManager__iconButton,
+  .table__row button {
+    min-width: 44px;
+  }
+
+  .projectManager__field input,
+  .projectManager__field select,
+  .projectManager__field textarea,
+  .projectManager__toolbar > input,
+  .projectManager__toolbar > select,
+  .auth__field input {
+    font-size: 16px;
+  }
+
+  .auth__modeButton {
+    min-height: 44px;
+  }
+
+  .auth__passwordToggle {
+    right: 0;
+    width: 44px;
+    height: 44px;
   }
 
 }

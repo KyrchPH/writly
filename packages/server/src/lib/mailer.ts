@@ -353,34 +353,90 @@ const renderContractEmailHtml = (params: {
   recipientName: string;
   contractTitle: string;
   contractUrl: string;
+  senderName: string;
+  senderEmail?: string;
+  logoUrl: string;
 }) => {
   const recipientName = escapeHtml(params.recipientName);
   const contractTitle = escapeHtml(params.contractTitle);
   const contractUrl = escapeHtml(params.contractUrl);
+  const senderName = escapeHtml(params.senderName);
+  const senderEmail = params.senderEmail ? escapeHtml(params.senderEmail) : "";
+  const logoUrl = escapeHtml(params.logoUrl);
   return `
-  <div style="margin:0;padding:40px 20px;background:#f4f7fb;font-family:Arial,Helvetica,sans-serif;color:#374151;">
-    <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:18px;padding:32px;border:1px solid #e5eaf2;">
-      <h1 style="margin:0 0 16px;color:#111827;font-size:26px;line-height:1.2;">
-        Document Ready for Review
-      </h1>
-
-      <p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 16px;">
-        Hi ${recipientName},
-      </p>
-
-      <p style="color:#374151;font-size:16px;line-height:1.6;margin:0 0 24px;">
-        Your document, <strong>${contractTitle}</strong>, is ready. Open the secure link below to review it.
-      </p>
-
-      <a href="${contractUrl}" style="display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:bold;font-size:15px;">
-        Open Document
-      </a>
-
-      <p style="color:#9ca3af;font-size:12px;line-height:1.5;margin:24px 0 0;">
-        If the button does not work, copy and paste this link into your browser:<br>
-        <a href="${contractUrl}" style="color:#2563eb;word-break:break-all;">${contractUrl}</a>
-      </p>
-    </div>
+  <div style="margin:0;padding:40px 16px;background:#f3f2fb;font-family:Arial,Helvetica,sans-serif;color:#1d1d25;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;">
+      <tr>
+        <td style="padding:0 4px 18px;">
+          <table role="presentation" cellspacing="0" cellpadding="0">
+            <tr>
+              <td style="width:44px;height:44px;border-radius:13px;background:#6757f8;text-align:center;vertical-align:middle;">
+                <img src="${logoUrl}" width="31" height="31" alt="Writly" style="display:block;width:31px;height:31px;margin:0 auto;border:0;">
+              </td>
+              <td style="padding-left:11px;vertical-align:middle;">
+                <div style="font-size:20px;font-weight:700;letter-spacing:-0.02em;color:#17171d;">Writly</div>
+                <div style="margin-top:2px;font-size:11px;color:#777682;">Secure document signing</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td style="overflow:hidden;background:#ffffff;border:1px solid #dfdeea;border-radius:22px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+            <tr>
+              <td style="height:7px;background:#6757f8;font-size:0;line-height:0;">&nbsp;</td>
+            </tr>
+            <tr>
+              <td style="padding:38px 42px 18px;">
+                <div style="display:inline-block;border-radius:999px;background:#efedff;color:#5a49e7;padding:7px 11px;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">
+                  Signature requested
+                </div>
+                <h1 style="margin:18px 0 12px;color:#17171d;font-size:30px;line-height:1.2;letter-spacing:-0.035em;">
+                  ${senderName} sent you a document
+                </h1>
+                <p style="margin:0;color:#666571;font-size:15px;line-height:1.7;">
+                  Hi ${recipientName}, review the document below and add your signature where requested.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:6px 42px 24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8f7fc;border:1px solid #e7e5ef;border-radius:14px;">
+                  <tr>
+                    <td style="width:42px;padding:17px 0 17px 18px;vertical-align:middle;">
+                      <div style="width:36px;height:36px;border-radius:10px;background:#e9e6ff;color:#5b4bea;text-align:center;font-size:20px;line-height:36px;">&#128196;</div>
+                    </td>
+                    <td style="padding:17px 18px 17px 12px;vertical-align:middle;">
+                      <div style="color:#222129;font-size:14px;font-weight:700;line-height:1.35;">${contractTitle}</div>
+                      <div style="margin-top:4px;color:#85838f;font-size:11px;">Sent by ${senderName}${senderEmail ? ` &middot; ${senderEmail}` : ""}</div>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:0 42px 34px;">
+                <a href="${contractUrl}" style="display:inline-block;background:#5b4bea;color:#ffffff;text-decoration:none;padding:14px 22px;border-radius:10px;font-size:14px;font-weight:600;line-height:1;">
+                  Review and sign document
+                </a>
+                <p style="margin:22px 0 0;color:#92909b;font-size:11px;line-height:1.6;">
+                  This secure link was sent specifically to you. If the button does not work, copy and paste this address into your browser:
+                </p>
+                <p style="margin:6px 0 0;font-size:11px;line-height:1.5;word-break:break-all;">
+                  <a href="${contractUrl}" style="color:#5b4bea;text-decoration:underline;">${contractUrl}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="border-top:1px solid #eceaf2;padding:20px 42px;color:#9997a1;font-size:10px;line-height:1.6;">
+                Sent by ${senderName} using Writly. If you were not expecting this document, you can safely ignore this email.
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </div>
 `;
 };
@@ -390,13 +446,20 @@ export const sendContractEmail = async (params: {
   recipientName: string;
   contractTitle: string;
   contractUrl: string;
+  senderName: string;
+  senderEmail?: string;
+  logoUrl: string;
 }) => {
-  const subject = `Document: ${params.contractTitle}`;
+  const subject = `${params.senderName} sent you a document to sign`;
   const text = [
     `Hi ${params.recipientName},`,
     "",
-    `Your document, "${params.contractTitle}", is ready for review:`,
+    `${params.senderName} sent you a document to review and sign.`,
+    "",
+    `Document: ${params.contractTitle}`,
     params.contractUrl,
+    "",
+    `Sent by ${params.senderName}${params.senderEmail ? ` (${params.senderEmail})` : ""} using Writly.`,
   ].join("\n");
 
   await sendMail({

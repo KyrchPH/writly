@@ -8,6 +8,7 @@ import {
   getPublicContract,
   listAdminContracts,
   sendAdminContractEmail,
+  streamAdminContractEvents,
   submitPublicContract,
   updateAdminContractTemplate,
 } from "../controllers/contracts.controller.js";
@@ -19,10 +20,10 @@ export const publicContractsRouter = Router();
 
 adminContractsRouter.use(requireAuth);
 adminContractsRouter.get("/", asyncHandler(listAdminContracts));
-adminContractsRouter.get("/all", asyncHandler(listAdminContracts));
 adminContractsRouter.post("/templates", asyncHandler(createAdminContractTemplate));
 adminContractsRouter.put("/templates/:id", asyncHandler(updateAdminContractTemplate));
 adminContractsRouter.post("/templates/:id/finalize", asyncHandler(finalizeAdminContractTemplate));
+adminContractsRouter.get("/templates/:id/events", asyncHandler(streamAdminContractEvents));
 adminContractsRouter.delete("/templates/:id", asyncHandler(deleteAdminContractTemplate));
 adminContractsRouter.post("/", asyncHandler(createAdminContract));
 adminContractsRouter.post("/:id/send", asyncHandler(sendAdminContractEmail));
