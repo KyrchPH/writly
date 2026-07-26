@@ -355,14 +355,12 @@ const renderContractEmailHtml = (params: {
   contractUrl: string;
   senderName: string;
   senderEmail?: string;
-  logoUrl: string;
 }) => {
   const recipientName = escapeHtml(params.recipientName);
   const contractTitle = escapeHtml(params.contractTitle);
   const contractUrl = escapeHtml(params.contractUrl);
   const senderName = escapeHtml(params.senderName);
   const senderEmail = params.senderEmail ? escapeHtml(params.senderEmail) : "";
-  const logoUrl = escapeHtml(params.logoUrl);
   return `
   <div style="margin:0;padding:40px 16px;background:#f3f2fb;font-family:Arial,Helvetica,sans-serif;color:#1d1d25;">
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;margin:0 auto;border-collapse:separate;">
@@ -370,8 +368,8 @@ const renderContractEmailHtml = (params: {
         <td style="padding:0 4px 18px;">
           <table role="presentation" cellspacing="0" cellpadding="0">
             <tr>
-              <td style="width:44px;height:44px;border-radius:13px;background:#6757f8;text-align:center;vertical-align:middle;">
-                <img src="${logoUrl}" width="31" height="31" alt="Writly" style="display:block;width:31px;height:31px;margin:0 auto;border:0;">
+              <td style="width:44px;height:44px;border-radius:13px;background:#6757f8;color:#ffffff;text-align:center;vertical-align:middle;font-family:Georgia,'Times New Roman',serif;font-size:26px;font-style:italic;font-weight:700;line-height:44px;mso-line-height-rule:exactly;">
+                W
               </td>
               <td style="padding-left:11px;vertical-align:middle;">
                 <div style="font-size:20px;font-weight:700;letter-spacing:-0.02em;color:#17171d;">Writly</div>
@@ -448,7 +446,6 @@ export const sendContractEmail = async (params: {
   contractUrl: string;
   senderName: string;
   senderEmail?: string;
-  logoUrl: string;
 }) => {
   const subject = `${params.senderName} sent you a document to sign`;
   const text = [

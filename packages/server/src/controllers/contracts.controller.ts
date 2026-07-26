@@ -513,7 +513,6 @@ export const sendAdminContractEmail: RequestHandler = async (req, res) => {
       contractUrl,
       senderName,
       senderEmail: sender?.email || req.user?.email,
-      logoUrl: `${baseAppUrl()}/writly-logo-white.svg`,
     });
   } catch (error) {
     res.status(202).json({
