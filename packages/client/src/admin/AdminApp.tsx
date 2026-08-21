@@ -1578,7 +1578,7 @@ const createFlattenedContractPdfBlob = async ({
   }
 
   const bytes = await pdfDocument.save();
-  return new Blob([bytes], { type: "application/pdf" });
+  return new Blob([bytes.buffer as ArrayBuffer], { type: "application/pdf" });
 };
 function normalizeProjectDeliveryStatus(value: unknown): ProjectDeliveryStatus {
   if (typeof value !== "string") return "Ongoing";
@@ -8876,17 +8876,7 @@ export default function AdminApp() {
                                 }
                               />
                             </label>
-                            <label className={styles.projectManager__field}>
-                              <span>Alignment</span>
-                              <AdminSelect
-                                value={selectedContractField.textAlign ?? "left"}
-                                ariaLabel="Field text alignment"
-                                options={contractFieldTextAlignOptions}
-                                onChange={(textAlign) =>
-                                  updateSelectedContractField({ textAlign })
-                                }
-                              />
-                            </label>
+                           
                             <label className={styles.projectManager__field}>
                               <span>Font color</span>
                               <input
@@ -9786,50 +9776,7 @@ export default function AdminApp() {
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" />
-                          <XAxis
-                            dataKey="date"
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(value) =>
-                              new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })
-                            }
-                          />
-                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                          <Tooltip
-                            cursor={false}
-                            labelFormatter={(value) =>
-                              new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
-                                month: "long",
-                                day: "numeric",
-                                year: "numeric",
-                              })
-                            }
-                            contentStyle={{
-                              background: "var(--card)",
-                              border: "1px solid var(--border)",
-                              borderRadius: 12,
-                              color: "var(--foreground)",
-                            }}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="visits"
-                            name="Visits"
-                            stroke="#14b8a6"
-                            fill="url(#visitorVisits)"
-                            strokeWidth={2}
-                          />
-                          <Area
-                            type="monotone"
-                            dataKey="uniqueVisitors"
-                            name="Unique visitors"
-                            stroke="#38bdf8"
-                            fill="url(#visitorUnique)"
-                            strokeWidth={2}
-                          />
+                        
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -9886,43 +9833,7 @@ export default function AdminApp() {
                         <p>Daily frontend and backend errors.</p>
                       </div>
                     </div>
-                    <div className={styles.analyticsChart__frame}>
-                      <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={errorGraph} margin={{ top: 12, right: 20, left: 0, bottom: 0 }} as any>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" />
-                          <XAxis<any>
-                            dataKey="date"
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(value) =>
-                              new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
-                                month: "short",
-                                day: "numeric",
-                              })
-                            }
-                          />
-                          <YAxis allowDecimals={false} tickLine={false} axisLine={false} />
-                          <Tooltip
-                            cursor={false}
-                            labelFormatter={(value) =>
-                              new Date(`${value}T00:00:00Z`).toLocaleDateString(undefined, {
-                                month: "long",
-                                day: "numeric",
-                                year: "numeric",
-                              })
-                            }
-                            contentStyle={{
-                              background: "var(--card)",
-                              border: "1px solid var(--border)",
-                              borderRadius: 12,
-                              color: "var(--foreground)",
-                            }}
-                          />
-                          <Bar dataKey="frontend" name="Frontend" stackId="errors" fill="#f59e0b" radius={[6, 6, 0, 0]} />
-                          <Bar dataKey="backend" name="Backend" stackId="errors" fill="#ef4444" radius={[6, 6, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
+                    
                   </div>
 
                   {errorLogs.length === 0 ? (
