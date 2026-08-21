@@ -8738,8 +8738,8 @@ export default function AdminApp() {
                         <div className={styles.contractDraft__selectedEditorContent}>
                           <label className={styles.projectManager__field}>
                             <span>Label or text</span>
-                            <input
-                              type="text"
+                            <textarea
+                              rows={6}
                               maxLength={CONTRACT_FIELD_LABEL_MAX_LENGTH}
                               value={selectedContractField.label}
                               onChange={(event) =>
@@ -12878,4 +12878,3 @@ export default function AdminApp() {
     </div>
   );
 }
-
