@@ -10,6 +10,8 @@ import {
 } from "../lib/contract-events.js";
 import { normalizeRouteParam, sendValidationError } from "./helpers.js";
 
+const CONTRACT_FIELD_LABEL_MAX_LENGTH = 20_000;
+
 const optionalEmailSchema = z.preprocess(
   (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
   z.string().trim().email().max(320).optional(),
@@ -31,7 +33,7 @@ const contractFieldSchema = z.object({
   width: z.coerce.number().min(0.03).max(1),
   height: z.coerce.number().min(0.015).max(1),
   objectLabel: z.string().trim().max(160).default(""),
-  label: z.string().trim().max(1000).default(""),
+  label: z.string().trim().max(CONTRACT_FIELD_LABEL_MAX_LENGTH).default(""),
   fontFamily: z.string().trim().min(1).max(120).default("Arial"),
   fontStyle: z.enum(["regular", "bold", "italic", "boldItalic"]).default("regular"),
   fontColor: z.string().trim().min(1).max(40).default("#111827"),

@@ -692,6 +692,8 @@ const safeJsonParse = <T,>(value: string | null, fallback: T): T => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
 
+const CONTRACT_FIELD_LABEL_MAX_LENGTH = 20_000;
+
 const readString = (value: unknown, fallback = "") =>
   typeof value === "string" ? value : fallback;
 
@@ -8738,6 +8740,7 @@ export default function AdminApp() {
                             <span>Label or text</span>
                             <input
                               type="text"
+                              maxLength={CONTRACT_FIELD_LABEL_MAX_LENGTH}
                               value={selectedContractField.label}
                               onChange={(event) =>
                                 updateSelectedContractField({ label: event.target.value })
@@ -8840,7 +8843,7 @@ export default function AdminApp() {
                                   selectedContractField.fontStyle ?? defaultContractFieldFontStyle
                                 }
                                 ariaLabel="Field font style"
-                                options={contractFieldFontStyleOptions}
+                                options={contractFieldFontStyleOptions as Array<{ value: "regular" | "bold" | "italic" | "boldItalic"; label: string }>}
                                 onChange={(fontStyle) => updateSelectedContractField({ fontStyle })}
                               />
                             </label>
@@ -9013,7 +9016,7 @@ export default function AdminApp() {
               )}
 
               <section className={styles.contractDraft__pdfStage}>
-                <div ref={contractPdfStageRef} className={styles.contractDraft__pdfViewport}>
+                <div ref={contractPdfStageRef as React.RefObject<HTMLDivElement>} className={styles.contractDraft__pdfViewport}>
                 <input
                   ref={contractImageObjectInputRef}
                   type="file"
@@ -9885,9 +9888,9 @@ export default function AdminApp() {
                     </div>
                     <div className={styles.analyticsChart__frame}>
                       <ResponsiveContainer width="100%" height={300}>
-                        <BarChart data={errorGraph} margin={{ top: 12, right: 20, left: 0, bottom: 0 }}>
+                        <BarChart data={errorGraph} margin={{ top: 12, right: 20, left: 0, bottom: 0 }} as any>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.18)" />
-                          <XAxis
+                          <XAxis<any>
                             dataKey="date"
                             tickLine={false}
                             axisLine={false}
